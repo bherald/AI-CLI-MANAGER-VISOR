@@ -197,8 +197,7 @@ class Broker:
             self.store.release(params["message"])
             return True
         if action == "delete_messages":
-            with self.delivery_lock:
-                return self.store.delete_messages(params["messages"])
+            return self.store.delete_messages(params["messages"])
         if action == "clear_history":
             return self.store.clear_history()
         if action == "cancel_shutdown_tracking":

@@ -64,6 +64,11 @@ class UICase(unittest.TestCase):
                     patch.object(self.window, "rpc") as rpc:
                 self.window.delete_messages()
                 rpc.assert_called_once_with("delete_messages", messages=[state])
+        self.window.messages.selectAll()
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), \
+                patch.object(self.window, "rpc") as rpc:
+            self.window.delete_messages()
+            rpc.assert_called_once_with("delete_messages", messages=["queued", "delivery_unknown", "completed"])
         with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.No), \
                 patch.object(self.window, "rpc") as rpc:
             self.window.delete_messages(["delivery_unknown"])

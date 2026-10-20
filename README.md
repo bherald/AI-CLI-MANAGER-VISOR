@@ -2,7 +2,7 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. The supervisor provides discovery, exact-session launch/resume, Focus, arrangement, operator messages, approved agent pairs, and graceful wrap-up tracking.
 
-**Beta 1.2.0 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: initial hosted builds found failures, and desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**Beta 1.2.0 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
 
 Source is MIT licensed. Provider accounts, provider software and their normal permissions remain yours to manage. VISOR does not bypass provider approvals.
 
@@ -20,7 +20,7 @@ Source is MIT licensed. Provider accounts, provider software and their normal pe
 | --- | --- | --- |
 | Windows | Windows Terminal (`wt.exe`); native provider executable on PATH | Earlier native build/package and live Codex delivery checks; operator-confirmed Focus. This beta still needs its own Windows build and clean-machine checks. Unsigned. |
 | Linux/X11 | `xterm`, `wmctrl`, Qt runtime libraries | Ubuntu/KWin native packaging and disposable-window checks recorded. Full provider, reboot, accessibility and multi-monitor acceptance remain open. |
-| macOS | macOS 14+ for the locked Qt wheels; Terminal.app; native Python 3.12 for source builds | Hosted CI compiled AppleScript, but initial jobs failed signing/startup checks. A successful native package and interactive desktop behavior remain unverified. |
+| macOS | macOS 14+ for the locked Qt wheels; Terminal.app; native Python 3.12 for source builds | Hosted Apple silicon/Intel builds, AppleScript compilation, signature and extracted-package checks pass. Interactive desktop behavior remains unverified. |
 | Linux/Wayland | XWayland for xterm | Programmatic Focus, arrangement and managed-window closure are unavailable. |
 
 Windows and Linux beta downloads can be released independently after their checks and release approval. There is no verified macOS download yet. [macOS preparation and test plan](docs/MACOS.md).
@@ -54,9 +54,9 @@ Linux/macOS desktop launches load PATH from the interactive login shell so versi
 
 Run `python3.12 scripts/native_build.py` on Linux/macOS or `py -3.12 scripts/native_build.py` on Windows. Native builds must run on their target OS. The command tests, builds and verifies an extracted package; it does not establish interactive desktop acceptance. See [development](docs/DEVELOPMENT.md) and [native acceptance](docs/NATIVE_ACCEPTANCE.md).
 
-Windows packages contain `visor/visor.exe`; Linux packages contain `visor/visor`. Extract and keep the complete directory together. `visor-console` is the companion diagnostic/helper executable. macOS packaging is prepared to produce `visor.app` with an embedded helper, using an ad-hoc signature; Developer ID signing and notarization are pending. Build output and checksums live under `dist/`, with `dist/latest-build.json` identifying the current local build.
+Windows packages contain `visor/visor.exe`; Linux packages contain `visor/visor`. Extract and keep the complete directory together. `visor-console` is the companion diagnostic/helper executable. macOS packaging produces `visor.app` with an embedded helper, using an ad-hoc signature; Developer ID signing and notarization are pending. Build output and checksums live under `dist/`, with `dist/latest-build.json` identifying the current local build.
 
-The GitHub workflow covers Windows, Linux, Apple silicon and Intel Mac jobs. The [first public run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39448456796) passed Windows and Linux. Mac signing/startup failures are addressed by a follow-up awaiting hosted validation; no successful Mac package or desktop result is claimed. Manual workflow runs retain evaluation artifacts; they do not publish a GitHub Release.
+The GitHub workflow covers Windows, Linux, Apple silicon and Intel Mac jobs. The [Mac follow-up run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39462649997) passed both Mac architectures, including signing and extracted-package/upgrade checks. Interactive desktop results remain unverified. Manual and version-tag workflow runs retain evaluation artifacts; release downloads identify the exact published version and architectures.
 
 Default state directories are `%LOCALAPPDATA%/Visor`, `~/Library/Application Support/Visor`, and `${XDG_DATA_HOME:-~/.local/share}/visor`. `--data-dir` isolates VISOR state, **not provider discovery or provider history**. Use disposable provider sessions when testing deletion. Data and messages remain local and unencrypted at rest; see [security](SECURITY.md).
 

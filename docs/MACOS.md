@@ -1,6 +1,6 @@
 # macOS experimental port
 
-**No successful Mac package or interactive desktop acceptance is claimed.** Initial hosted Mac CI compiled the generated AppleScript but found signing/startup failures. The follow-up code is prepared for another hosted run. Linux tests of mocked AppleScript calls do not establish that macOS runs correctly.
+**Hosted Apple silicon and Intel builds and extracted-package acceptance now pass. Interactive Mac desktop acceptance remains unverified.** The [successful follow-up jobs](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39462649997) include source tests, native AppleScript compilation, offscreen UI startup, helper/app signature checks, broker restart, simulated provider transport and relocation/upgrade checks. These results do not establish Finder, Automation permissions or live window-control behavior.
 
 ## Implemented and checkable without a Mac
 
@@ -19,9 +19,9 @@ The automated tests cover command quoting, refusal reasons, extra-tab safeguards
 The [first public run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39448456796) passed Windows/Linux but failed on both Mac architectures:
 
 - Apple silicon passed source tests and AppleScript compilation, then codesign rejected a dotted `.dist-info` directory inside the copied console onedir. The helper is now built as a proper console-enabled app bundle, verified and signed before the enclosing app. It retains stdin/stdout for broker/MCP use. Both GUI and helper resolve the same nested executable.
-- Intel broker tests exhausted their four/five-second startup limits while their processes were still alive. The test harness now waits up to 30 seconds for an actual ping, reaps its disposable process on failure and reports captured diagnostics. Slow startup is a hypothesis; a new hosted run is needed to confirm it. Assertions remain enabled.
+- Intel broker tests exhausted their four/five-second startup limits while their processes were still alive. The test harness now waits up to 30 seconds for an actual ping, reaps its disposable process on failure and reports captured diagnostics. The longer wait still failed. The broker now avoids HTTPServer's reverse-DNS lookup when binding its loopback-only endpoint; Intel broker and packaged acceptance tests then passed. Assertions remain enabled.
 
-Apple documents the dotted-directory issue in [Placing content in a bundle](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle). The follow-up does not disable signing or skip Mac tests. Actual signing and packaged-helper behavior remain gated on hosted results; interactive testing still needs a Mac desktop.
+Apple documents the dotted-directory issue in [Placing content in a bundle](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle). The follow-up does not disable signing or skip Mac tests. The second follow-up also updated the upgrade fixture to copy the complete helper app rather than assuming a Windows/Linux `_internal` directory. Signing and packaged-helper checks now pass on both architectures; interactive testing still needs a Mac desktop.
 
 ## Build on a Mac or hosted Mac
 
@@ -32,7 +32,7 @@ python3.12 scripts/native_build.py
 .venv/bin/python scripts/run.py --doctor
 ```
 
-The workflow in `.github/workflows/ci.yml` includes `macos-14` (Apple silicon) and `macos-15-intel`. After an approved GitHub push, inspect each job independently. A manual Actions run retains downloadable evaluation archives for seven days. It does not create a public Release.
+The workflow in `.github/workflows/ci.yml` includes `macos-14` (Apple silicon) and `macos-15-intel`. After an approved GitHub push, inspect each job independently. Manual and version-tag Actions runs retain downloadable evaluation archives for seven days. It does not create a public Release.
 
 GitHub supplies hosted Mac machines; nothing needs to be cloned or installed to emulate a Mac locally. See [GitHub runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). PyInstaller builds are specific to the host OS: [PyInstaller documentation](https://pyinstaller.org/en/stable/operating-mode.html). We cannot produce a verified Mac app from this Linux build host.
 

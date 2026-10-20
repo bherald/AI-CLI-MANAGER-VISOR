@@ -16,6 +16,7 @@ os.environ["VISOR_TEST_EXECUTABLE"] = str(exe)
 from test_broker_process import BrokerProcessCase
 
 suite = unittest.TestSuite([
+    BrokerProcessCase("test_operator_can_delete_uncertain_message_but_agent_cannot"),
     BrokerProcessCase("test_claude_channel_cross_provider_acknowledgment_and_broker_restart"),
     BrokerProcessCase("test_delete_claude_conversation_and_visor_data"),
     BrokerProcessCase("test_external_focus_link_cannot_grant_agent_controls_or_delete_history"),

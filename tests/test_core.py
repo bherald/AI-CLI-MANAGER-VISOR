@@ -188,6 +188,14 @@ class StoreCase(unittest.TestCase):
         self.store.enqueue("operator", self.b, "New text", "new", operator=True)
         self.assertIsNotNone(self.store.claim())
 
+    def test_delete_does_not_wait_for_slow_provider_delivery(self):
+        message = self.send()
+        broker = Broker(self.root)
+        with ThreadPoolExecutor(max_workers=1) as pool, broker.delivery_lock:
+            deleted = pool.submit(broker.dispatch, "delete_messages",
+                                  {"messages": [message["id"]]}, "operator")
+            self.assertEqual(deleted.result(timeout=2), 1)
+
     def test_visible_history_filters_before_limit(self):
         active = self.send()
         cleared = self.store.enqueue("operator", self.b, "Old", "clear", operator=True)
