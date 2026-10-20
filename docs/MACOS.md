@@ -1,6 +1,6 @@
 # macOS experimental port
 
-**No live Mac build or desktop testing has been completed for VISOR.** The macOS code and build workflow are prepared for evaluation. Linux tests of mocked AppleScript calls do not establish that macOS runs correctly.
+**No successful Mac package or interactive desktop acceptance is claimed.** Initial hosted Mac CI compiled the generated AppleScript but found signing/startup failures. The follow-up code is prepared for another hosted run. Linux tests of mocked AppleScript calls do not establish that macOS runs correctly.
 
 ## Implemented and checkable without a Mac
 
@@ -10,9 +10,18 @@
 - Missing-window checks avoid starting Terminal as a side effect. Automation/association failures remain failures, rather than evidence of closure.
 - Finder launches load PATH from the interactive login shell, with a bounded timeout and inherited-PATH fallback. The Terminal launch explicitly forwards PATH and source-mode PYTHONPATH so an already-running Terminal cannot silently restore an older search path. Helpers do not repeatedly read shell startup files.
 - The app includes `NSAppleEventsUsageDescription`, verified before ad-hoc signing and after archive extraction. Apple requires this description for apps sending Apple events: [Apple documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/nsappleeventsusagedescription).
-- The bundle contains its own console helper, resources and notices. Archives preserve executable permissions and symlinks; the verifier checks the assembled signature and extracted resources.
+- The bundle contains a console-enabled `visor-console.app` under `Contents/Helpers`, plus resources and notices. PyInstaller BUNDLE separates helper resources from code directories so dotted metadata folders are not treated as nested code bundles. Archives preserve executable permissions and symlinks; the verifier checks the assembled signature and extracted resources.
 
 The automated tests cover command quoting, refusal reasons, extra-tab safeguards, minimized-window restoration, PATH fallback and bundle metadata. Native Mac CI additionally compiles generated AppleScript without executing its window-control operations.
+
+## First hosted CI and follow-up
+
+The [first public run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39448456796) passed Windows/Linux but failed on both Mac architectures:
+
+- Apple silicon passed source tests and AppleScript compilation, then codesign rejected a dotted `.dist-info` directory inside the copied console onedir. The helper is now built as a proper console-enabled app bundle, verified and signed before the enclosing app. It retains stdin/stdout for broker/MCP use. Both GUI and helper resolve the same nested executable.
+- Intel broker tests exhausted their four/five-second startup limits while their processes were still alive. The test harness now waits up to 30 seconds for an actual ping, reaps its disposable process on failure and reports captured diagnostics. Slow startup is a hypothesis; a new hosted run is needed to confirm it. Assertions remain enabled.
+
+Apple documents the dotted-directory issue in [Placing content in a bundle](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle). The follow-up does not disable signing or skip Mac tests. Actual signing and packaged-helper behavior remain gated on hosted results; interactive testing still needs a Mac desktop.
 
 ## Build on a Mac or hosted Mac
 
@@ -31,7 +40,7 @@ GitHub supplies hosted Mac machines; nothing needs to be cloned or installed to 
 
 Use a disposable project and provider conversations. A separate VISOR data directory does not isolate provider discovery/history.
 
-1. Extract the entire archive. Open `visor.app` from Finder, then test its embedded `Contents/Helpers/visor-console/visor-console --doctor`.
+1. Extract the entire archive. Open `visor.app` from Finder, then test its embedded `Contents/Helpers/visor-console.app/Contents/MacOS/visor-console --doctor`.
 2. Confirm correct provider path/version with NVM or another version manager. Test quoted paths and a project directory containing spaces.
 3. Allow the app's Terminal request under System Settings > Privacy & Security > Automation. Source Python and the packaged app can have different permission identities. A denied request must show an actionable error and preserve sessions.
 4. Test new/resume, provider lifecycle, operator read/completion receipts and supervised wrap-up. Do not infer success from a visible terminal alone.

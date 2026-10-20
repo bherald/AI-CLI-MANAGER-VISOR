@@ -37,7 +37,7 @@ from .providers import (
 from .store import PolicyError, Store
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-20-beta-1"
+BUILD = "2026-10-20-beta-2"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "

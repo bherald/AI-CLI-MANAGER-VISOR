@@ -33,6 +33,14 @@ if not (root / "uv.lock").exists():
     raise SystemExit("Build blocked: uv.lock is missing. Run scripts/bootstrap.py to resolve dependencies.")
 env = {**os.environ, "PYINSTALLER_CONFIG_DIR": str(root / ".cache" / "pyinstaller")}
 for name, windowed in (("visor", True), ("visor-console", False)):
+    if sys.platform == "darwin" and not windowed:
+        # A console-enabled app bundle lets PyInstaller relocate non-code data
+        # out of code directories before the helper is nested in the GUI app.
+        subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm",
+                        "--distpath", str(bundle_output),
+                        "--workpath", str(root / "build" / name),
+                        str(root / "scripts/macos_console.spec")], cwd=root, env=env, check=True)
+        continue
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--onedir", "--name", name,
             "--paths", str(root / "src"), "--distpath", str(bundle_output),
             "--workpath", str(root / "build" / name), "--specpath", str(root / "build"),
@@ -43,22 +51,24 @@ for name, windowed in (("visor", True), ("visor-console", False)):
     if windowed and sys.platform == "darwin":
         args += ["--osx-bundle-identifier", "org.visor.supervisor"]
     subprocess.run([*args, str(root / "scripts" / "package_entry.py")], cwd=root, env=env, check=True)
-# Both entry points share one onedir runtime outside the macOS app.
+# Both entry points share one onedir runtime on Windows/Linux.
 suffix = ".exe" if os.name == "nt" else ""
 console = bundle_output / "visor-console"
 destination = bundle_output / "visor"
-shutil.copy2(console / ("visor-console" + suffix), destination)
-shutil.copytree(console / "_internal", destination / "_internal", dirs_exist_ok=True)
 if sys.platform == "darwin":
     app = bundle_output / "visor.app"
     from visor.mac_bundle import prepare_info_plist, verify_info_plist
     prepare_info_plist(app)
     verify_info_plist(app)
-    shutil.copytree(console, app / "Contents" / "Helpers" / "visor-console",
+    helper_app = app / "Contents/Helpers/visor-console.app"
+    shutil.copytree(bundle_output / "visor-console.app", helper_app,
                     dirs_exist_ok=True, symlinks=True)
+    verify_info_plist(helper_app, bundle_identifier="org.visor.supervisor.helper")
     resources = app / "Contents" / "Resources" / "visor"
     resources.mkdir(parents=True, exist_ok=True)
 else:
+    shutil.copy2(console / ("visor-console" + suffix), destination)
+    shutil.copytree(console / "_internal", destination / "_internal", dirs_exist_ok=True)
     resources = destination
 for filename in ("README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "SECURITY.md",
                  "CONTRIBUTING.md", "uv.lock"):
@@ -108,9 +118,11 @@ manifest["inventory_scope"] = "Installed build environment; includes tooling tha
 if sys.platform == "darwin":
     # Assembly changes the app after PyInstaller's initial ad-hoc signature.
     # This local signature is not Developer ID signing or notarization.
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(helper_app)], check=True)
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(helper_app)], check=True)
     subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
-    smoke_exe = app / "Contents" / "Helpers" / "visor-console" / "visor-console"
+    smoke_exe = helper_app / "Contents/MacOS/visor-console"
 else:
     smoke_exe = destination / ("visor-console" + suffix)
 smoke = root / ".cache" / "packaged-smoke" / uuid.uuid4().hex

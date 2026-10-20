@@ -6,10 +6,11 @@ import shutil
 import subprocess
 import sys
 import threading
-import time
 import unittest
 import uuid
 from pathlib import Path
+
+from broker_support import wait_for_broker
 
 from visor.broker import Client
 from visor.paths import write_private
@@ -34,17 +35,7 @@ class BrokerProcessCase(unittest.TestCase):
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         env={**os.environ, "VISOR_SHELL_PATH": "0", "CLAUDE_CONFIG_DIR": str(self.root / "claude-config")},
                                         **hidden_options())
-        self.client = Client(self.root)
-        for _ in range(80):
-            try:
-                self.client.call("ping")
-                return
-            except (OSError, ValueError):
-                if self.process.poll() is not None:
-                    _, error = self.process.communicate()
-                    self.fail("Broker failed: " + error.decode(errors="replace"))
-                time.sleep(0.05)
-        self.fail("Broker startup timed out")
+        self.client = wait_for_broker(self.process, self.root)
 
     def tearDown(self):
         if self.process and self.process.poll() is None:

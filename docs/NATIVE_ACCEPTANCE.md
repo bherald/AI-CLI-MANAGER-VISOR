@@ -51,7 +51,7 @@ to preserve executable permissions and, on macOS, framework symlinks. Extract th
   both Python and the packaged app because their Automation identities differ. The app has
   a local ad-hoc signature, not Developer ID signing/notarization; a downloaded build may be
   blocked by Gatekeeper. Prefer building locally for this acceptance run. Console diagnostics:
-  `visor.app/Contents/Helpers/visor-console/visor-console --doctor`.
+  `visor.app/Contents/Helpers/visor-console.app/Contents/MacOS/visor-console --doctor`.
 - Linux: run `visor/visor` from the extracted directory. Keep the whole `visor` directory.
   Run `visor/visor-console --doctor` for diagnostics.
 - Wayland: xterm needs XWayland. Focus, arrangement and managed-window closure are intentionally

@@ -2,11 +2,11 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
-from visor.broker import Client
+from broker_support import wait_for_broker
+
 from visor.process import hidden_options
 
 
@@ -20,12 +20,8 @@ class BrokerStopCase(unittest.TestCase):
                 stderr=subprocess.PIPE, env={**os.environ, "VISOR_SHELL_PATH": "0"},
                 **hidden_options())
             try:
-                deadline = time.monotonic() + 5
-                while not (root / "broker.json").exists():
-                    if process.poll() is not None or time.monotonic() >= deadline:
-                        self.fail("Test broker failed to start")
-                    time.sleep(0.05)
-                self.assertTrue(Client(root).call("stop"))
+                client = wait_for_broker(process, root)
+                self.assertTrue(client.call("stop"))
                 process.wait(timeout=10)
                 self.assertEqual(process.returncode, 0)
             finally:

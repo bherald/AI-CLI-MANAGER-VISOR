@@ -80,7 +80,8 @@ def own_command(console: bool = False) -> list[str]:
         exe = Path(sys.executable)
         if console:
             if sys.platform == "darwin" and exe.parent.name == "MacOS":
-                exe = exe.parent.parent / "Helpers" / "visor-console" / "visor-console"
+                if exe.name != "visor-console":
+                    exe = exe.parent.parent / "Helpers/visor-console.app/Contents/MacOS/visor-console"
             else:
                 exe = exe.with_name("visor-console.exe" if os.name == "nt" else "visor-console")
         return [str(exe)]

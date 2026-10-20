@@ -31,7 +31,10 @@ def main():
         app = work / "visor.app"
         from visor.mac_bundle import verify_info_plist
         verify_info_plist(app)
-        exe = app / "Contents/Helpers/visor-console/visor-console"
+        helper_app = app / "Contents/Helpers/visor-console.app"
+        verify_info_plist(helper_app, bundle_identifier="org.visor.supervisor.helper")
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(helper_app)], check=True)
+        exe = helper_app / "Contents/MacOS/visor-console"
         gui = app / "Contents/MacOS/visor"
         resources = app / "Contents/Resources/visor"
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)

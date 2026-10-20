@@ -20,10 +20,10 @@ def prepare_info_plist(app: Path) -> None:
         plistlib.dump(info, stream)
 
 
-def verify_info_plist(app: Path) -> None:
+def verify_info_plist(app: Path, *, bundle_identifier="org.visor.supervisor") -> None:
     with (app / "Contents/Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
-    if (info.get("CFBundleIdentifier") != "org.visor.supervisor"
+    if (info.get("CFBundleIdentifier") != bundle_identifier
             or info.get("NSAppleEventsUsageDescription") != AUTOMATION_REASON
             or info.get("CFBundleVersion") != "1"
             or info.get("CFBundleShortVersionString") != __version__.split("b")[0]):

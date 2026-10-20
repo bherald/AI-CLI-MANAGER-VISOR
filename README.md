@@ -2,7 +2,7 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. The supervisor provides discovery, exact-session launch/resume, Focus, arrangement, operator messages, approved agent pairs, and graceful wrap-up tracking.
 
-**Beta 0.1.0b1 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: no live Mac build or desktop testing has been completed.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**Beta 0.1.0b1 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: initial hosted builds found failures, and desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
 
 Source is MIT licensed. Provider accounts, provider software and their normal permissions remain yours to manage. VISOR does not bypass provider approvals.
 
@@ -20,7 +20,7 @@ Source is MIT licensed. Provider accounts, provider software and their normal pe
 | --- | --- | --- |
 | Windows | Windows Terminal (`wt.exe`); native provider executable on PATH | Earlier native build/package and live Codex delivery checks; operator-confirmed Focus. This beta still needs its own Windows build and clean-machine checks. Unsigned. |
 | Linux/X11 | `xterm`, `wmctrl`, Qt runtime libraries | Ubuntu/KWin native packaging and disposable-window checks recorded. Full provider, reboot, accessibility and multi-monitor acceptance remain open. |
-| macOS | macOS 14+ for the locked Qt wheels; Terminal.app; native Python 3.12 for source builds | Experimental implementation and CI workflow only. No live Mac testing or native build result. Automation permissions, Finder launch and window controls remain unverified. |
+| macOS | macOS 14+ for the locked Qt wheels; Terminal.app; native Python 3.12 for source builds | Hosted CI compiled AppleScript, but initial jobs failed signing/startup checks. A successful native package and interactive desktop behavior remain unverified. |
 | Linux/Wayland | XWayland for xterm | Programmatic Focus, arrangement and managed-window closure are unavailable. |
 
 Windows and Linux beta downloads can be released independently after their checks and release approval. There is no verified macOS download yet. [macOS preparation and test plan](docs/MACOS.md).
@@ -56,7 +56,7 @@ Run `python3.12 scripts/native_build.py` on Linux/macOS or `py -3.12 scripts/nat
 
 Windows packages contain `visor/visor.exe`; Linux packages contain `visor/visor`. Extract and keep the complete directory together. `visor-console` is the companion diagnostic/helper executable. macOS packaging is prepared to produce `visor.app` with an embedded helper, using an ad-hoc signature; Developer ID signing and notarization are pending. Build output and checksums live under `dist/`, with `dist/latest-build.json` identifying the current local build.
 
-The GitHub workflow prepares Windows, Linux, Apple silicon and Intel Mac jobs. Remote CI has not run for this candidate. Manual workflow runs retain evaluation artifacts; they do not publish a GitHub Release.
+The GitHub workflow covers Windows, Linux, Apple silicon and Intel Mac jobs. The [first public run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39448456796) passed Windows and Linux. Mac signing/startup failures are addressed by a follow-up awaiting hosted validation; no successful Mac package or desktop result is claimed. Manual workflow runs retain evaluation artifacts; they do not publish a GitHub Release.
 
 Default state directories are `%LOCALAPPDATA%/Visor`, `~/Library/Application Support/Visor`, and `${XDG_DATA_HOME:-~/.local/share}/visor`. `--data-dir` isolates VISOR state, **not provider discovery or provider history**. Use disposable provider sessions when testing deletion. Data and messages remain local and unencrypted at rest; see [security](SECURITY.md).
 
