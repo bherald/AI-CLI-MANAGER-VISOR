@@ -4,6 +4,7 @@ import json
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -28,16 +29,55 @@ def executable(provider: str) -> str:
     found = shutil.which(provider)
     if not found:
         raise ProviderUnavailable(f"Install {provider} and sign in using its supported login")
-    if Path(found).suffix.lower() in (".bat", ".cmd"):
+    if Path(found).suffix.lower() in (".bat", ".cmd", ".ps1") or (
+            sys.platform == "win32" and Path(found).suffix.lower() != ".exe"):
         raise ProviderUnavailable("A native provider executable is required; shell launchers are not yet supported")
     return found
+
+
+def provider_command(provider: str) -> list[str]:
+    """Launch a native provider or the selected Windows npm Codex entry via Node."""
+    try:
+        return [executable(provider)]
+    except ProviderUnavailable:
+        if provider != "codex" or sys.platform != "win32":
+            raise
+        found = shutil.which(provider)
+        if not found or Path(found).name.lower() not in ("codex", "codex.cmd", "codex.bat", "codex.ps1"):
+            raise
+    launcher = Path(found)
+    roots = [launcher.parent / "node_modules/@openai/codex",
+             launcher.resolve().parent / "node_modules/@openai/codex"]
+    resolved = launcher.resolve()
+    if resolved.name == "codex.js" and resolved.parent.name == "bin":
+        roots.insert(0, resolved.parent.parent)
+    for package in roots:
+        try:
+            metadata = json.loads((package / "package.json").read_text(encoding="utf-8"))
+            entry = metadata.get("bin", {})
+            entry = entry.get("codex") if isinstance(entry, dict) else entry
+            script = package / "bin/codex.js"
+            if metadata.get("name") != "@openai/codex" or entry not in ("bin/codex.js", "./bin/codex.js") or not script.is_file():
+                continue
+        except (OSError, ValueError, AttributeError):
+            continue
+        # npm's own JS entry preserves its vendor/helper paths and package-manager
+        # environment. Invoke Node directly so no command-shell parsing is needed.
+        node = launcher.parent / "node.exe"
+        if not node.is_file():
+            node = Path(shutil.which("node.exe") or "")
+        if not node.is_file():
+            raise ProviderUnavailable("Codex npm installation found, but node.exe is unavailable on VISOR's PATH")
+        return [str(node.resolve()), str(script.resolve())]
+    raise ProviderUnavailable("Codex shell launcher found, but its @openai/codex npm entry is missing. "
+                              "Use a complete Windows npm installation or a native codex.exe on PATH.")
 
 
 class CodexRPC:
     """Attach to the existing daemon. Never start an unrelated server or approve its requests."""
 
     def __init__(self, *, experimental=False):
-        self.process = subprocess.Popen([executable("codex"), "app-server", "proxy"],
+        self.process = subprocess.Popen([*provider_command("codex"), "app-server", "proxy"],
                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.DEVNULL,
                                         **hidden_options())
@@ -54,7 +94,7 @@ class CodexRPC:
         try:
             if not self.ready.wait(10) or self.protocol.state != OPEN:
                 raise ProviderUnavailable(self.connection_error or "Codex control socket handshake timed out")
-            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.2.0"},
+            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.2.1"},
                                      "capabilities": {"experimentalApi": experimental}})
             self.send({"method": "initialized", "params": {}})
         except Exception:
@@ -164,7 +204,7 @@ def discover_codex():
 
 
 def create_session(provider, cwd):
-    executable(provider)
+    provider_command(provider)
     if not Path(cwd).is_dir():
         raise ProviderUnavailable("Choose an existing project directory")
     if provider == "claude":
@@ -179,7 +219,7 @@ def create_session(provider, cwd):
 def ensure_codex_daemon():
     """Operator launch preflight. Start if absent; never restart or replace live work."""
     try:
-        result = run([executable("codex"), "app-server", "daemon", "start"], timeout=20)
+        result = run([*provider_command("codex"), "app-server", "daemon", "start"], timeout=20)
         if result.returncode:
             raise ProviderUnavailable("Codex shared server could not start; run `codex app-server daemon start` in a terminal for diagnostics. No session was opened.")
         # A successful launcher exit is not proof the control socket is ready.
@@ -225,15 +265,15 @@ def delete_provider_session(session, before_delete):
 
 
 def session_command(session, mcp_command, *, new=False, claude_options=None, settings_file=None):
-    exe = executable(session["provider"])
+    prefix = provider_command(session["provider"])
     if session["provider"] == "codex":
         config = ["-c", "mcp_servers.visor.command=" + json.dumps(mcp_command[0]),
                   "-c", "mcp_servers.visor.args=" + json.dumps(mcp_command[1:])]
-        return [exe, "--remote", "unix://", *config, "-C", session["cwd"], "resume", session["native_id"]]
+        return [*prefix, "--remote", "unix://", *config, "-C", session["cwd"], "resume", session["native_id"]]
     config = json.dumps({"mcpServers": {"visor": {"command": mcp_command[0], "args": mcp_command[1:]}}})
     from .claude import validate_options
     options = validate_options(claude_options or {})
-    command = [exe, "--session-id" if new else "--resume", session["native_id"]]
+    command = [*prefix, "--session-id" if new else "--resume", session["native_id"]]
     if options["mode"] != "plugin":
         command += ["--mcp-config", config]
     if settings_file:
@@ -386,7 +426,7 @@ def codex_peer_tools(session):
 
 def deliver_codex(session, message):
     text = codex_message_text(message)
-    result = run([executable("codex"), "queue", "--remote", "unix://", "--thread", session["native_id"],
+    result = run([*provider_command("codex"), "queue", "--remote", "unix://", "--thread", session["native_id"],
                   "--message", text, "-C", session["cwd"]], cwd=session["cwd"], timeout=30)
     # A nonzero command may still have transmitted: do not claim safe retry.
     if result.returncode:

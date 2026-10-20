@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from .process import run
+from .providers import ProviderUnavailable, provider_command
 
 
 def doctor():
@@ -20,12 +21,17 @@ def doctor():
     for provider in ("codex", "claude"):
         exe = shutil.which(provider)
         info = {"executable": exe, "version": None}
-        if exe and exe.lower().endswith((".bat", ".cmd")):
-            warnings.append(f"{provider}: install a native executable; shell launchers are unsupported")
-        elif exe:
+        if exe:
             try:
-                result = run([exe, "--version"], timeout=5)
+                command = provider_command(provider)
+                info["executable"] = command[0]
+                info["command"] = command
+                if command != [exe]:
+                    info["launcher"] = exe
+                result = run([*command, "--version"], timeout=5)
                 info["version"] = result.stdout.strip()[:200] if not result.returncode else "unavailable"
+            except ProviderUnavailable as exc:
+                warnings.append(f"{provider}: {exc}")
             except (OSError, subprocess.TimeoutExpired):
                 info["version"] = "unavailable"
         providers[provider] = info

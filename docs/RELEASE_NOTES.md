@@ -1,3 +1,11 @@
+# 1.2.1 — Windows npm Codex compatibility
+
+Fixes the “native provider executable is required” error when Windows finds npm's `codex.cmd`, `codex.ps1` or extensionless shim. VISOR locates the selected installation's declared `@openai/codex` entry point and invokes it with `node.exe`. This preserves upstream vendor/helper paths, package metadata, standard input/output and literal command arguments. Resume, discovery, daemon startup, delivery and `--doctor` use the same command prefix. Native executables remain supported.
+
+The Windows workflow installs a disposable, pinned Codex 0.163.0 npm fixture and checks version resolution in both source and the frozen app. It does not authenticate or run a model. Native Windows tests also pass spaces, quotes, Unicode and shell metacharacters through a real Node process.
+
+Version 1.2.0's published evaluation downloads remain at [the beta release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.2.0). CI artifacts identify the new source revision and contain the 1.2.1 packages.
+
 # 1.2.0 — beta
 
 Message history now supports deleting selected messages in every delivery state, including uncertain delivery. Deletion cancels queued delivery, removes message text from Visor, and preserves request IDs against accidental replay. Already delivered text cannot be retracted. Cleared history records are hidden from the communication list.

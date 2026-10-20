@@ -2,7 +2,7 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. The supervisor provides discovery, exact-session launch/resume, Focus, arrangement, operator messages, approved agent pairs, and graceful wrap-up tracking.
 
-**Beta 1.2.0 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**Beta 1.2.1 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
 
 Source is MIT licensed. Provider accounts, provider software and their normal permissions remain yours to manage. VISOR does not bypass provider approvals.
 
@@ -18,7 +18,7 @@ Source is MIT licensed. Provider accounts, provider software and their normal pe
 
 | Platform | Requirements | Verified evidence and limits |
 | --- | --- | --- |
-| Windows | Windows Terminal (`wt.exe`); native provider executable on PATH | Earlier native build/package and live Codex delivery checks; operator-confirmed Focus. This beta still needs its own Windows build and clean-machine checks. Unsigned. |
+| Windows | Windows Terminal (`wt.exe`); native provider or standard npm-installed Codex on PATH | Earlier native build/package and live Codex delivery checks; operator-confirmed Focus. Clean-machine/provider acceptance remains incomplete. Unsigned. |
 | Linux/X11 | `xterm`, `wmctrl`, Qt runtime libraries | Ubuntu/KWin native packaging and disposable-window checks recorded. Full provider, reboot, accessibility and multi-monitor acceptance remain open. |
 | macOS | macOS 14+ for the locked Qt wheels; Terminal.app; native Python 3.12 for source builds | Hosted Apple silicon/Intel builds, AppleScript compilation, signature and extracted-package checks pass. Interactive desktop behavior remains unverified. |
 | Linux/Wayland | XWayland for xterm | Programmatic Focus, arrangement and managed-window closure are unavailable. |
@@ -27,7 +27,7 @@ Windows and Linux beta downloads can be released independently after their check
 
 ## Run from source
 
-Install Python 3.12 and [uv](https://docs.astral.sh/uv/getting-started/installation/), then clone or download this source and open a terminal in the project directory. Install Codex and/or Claude Code separately and sign in through the provider's normal login. One missing provider does not block the other. Codex integration was checked with `codex-cli 0.163.0`; compatibility with older versions is not promised.
+Install Python 3.12 and [uv](https://docs.astral.sh/uv/getting-started/installation/), then clone or download this source and open a terminal in the project directory. Install Codex and/or Claude Code separately and sign in through the provider's normal login. One missing provider does not block the other. Windows npm installations of Codex are supported: VISOR invokes the selected package’s `bin/codex.js` with `node.exe`, preserving Codex’s normal helper paths and update metadata. No PATH edits or new login are needed when the standard npm launcher is already discoverable. Codex integration was checked with `codex-cli 0.163.0`; compatibility with older versions is not promised.
 
 Windows:
 
