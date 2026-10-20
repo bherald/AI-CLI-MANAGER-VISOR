@@ -38,7 +38,7 @@ jobs:
       - name: Extracted native package acceptance (no model calls)
         run: uv run --frozen --extra dev python scripts/verify_native_package.py
       - name: Retain manually requested beta build
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: visor-beta-${{ matrix.os }}
@@ -47,4 +47,3 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
           retention-days: 7
-

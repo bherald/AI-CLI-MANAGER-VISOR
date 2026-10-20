@@ -1,6 +1,6 @@
 # Beta status and evidence
 
-Release candidate: **0.1.0b1**, build `2026-10-20-beta-2`.
+Release candidate: **1.2.0**, build `2026-10-20-beta-3`.
 
 Beta is an evaluation label. It does not mean complete platform acceptance, completed binary-distribution review, or production suitability.
 

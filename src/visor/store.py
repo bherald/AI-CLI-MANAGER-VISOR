@@ -248,6 +248,8 @@ class Store:
                 raise PolicyError("Session was permanently deleted")
             old = db.execute("SELECT * FROM messages WHERE sender=? AND dedupe=?", (sender, dedupe)).fetchone()
             if old:
+                if old["state"] == "deleted":
+                    raise PolicyError("Message was deleted; use a new request ID")
                 if (old["recipient"], old["body"], old["kind"]) != (recipient, body, kind):
                     raise PolicyError("Request ID already used for a different message")
                 return dict(old)
@@ -281,9 +283,12 @@ class Store:
                 self._update(db, recipient, {"shutdown": "requested"})
             return dict(db.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone())
 
-    def messages(self, limit=200):
+    def messages(self, limit=200, *, visible=False):
         with self.connect() as db:
-            return [dict(r) for r in db.execute("SELECT * FROM messages ORDER BY created DESC LIMIT ?", (limit,))]
+            return [dict(r) for r in db.execute("""SELECT * FROM messages
+                WHERE NOT ? OR (state != 'deleted' AND NOT
+                    (state IN ('completed','failed') AND body='[cleared]'))
+                ORDER BY created DESC LIMIT ?""", (visible, limit))]
 
     def message(self, mid):
         with self.connect() as db:
@@ -359,6 +364,19 @@ class Store:
             db.execute("""UPDATE messages SET state='delivery_unknown',detail='Broker stopped during delivery',
                 updated=? WHERE state='sending'""", (time.time(),))
             db.execute("UPDATE sessions SET status='unknown',heartbeat=NULL,process_id=NULL")
+
+    def delete_messages(self, ids):
+        """Remove operator-selected content; retain request IDs to prevent replay."""
+        if not isinstance(ids, list) or not ids or len(ids) > 200 or any(
+                not isinstance(mid, str) or not mid for mid in ids):
+            raise PolicyError("Select 1–200 message IDs")
+        with self.connect(True) as db:
+            count = 0
+            for mid in set(ids):
+                count += db.execute("""UPDATE messages SET body='[deleted]',detail='',
+                    state='deleted',updated=? WHERE id=? AND state!='deleted'""",
+                                    (time.time(), mid)).rowcount
+            return count
 
     def clear_history(self, days=0):
         """Keep idempotency tombstones; remove content, never pending or ambiguous deliveries."""

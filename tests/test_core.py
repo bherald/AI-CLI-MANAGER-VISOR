@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from visor.broker import Broker, BrokerLock
+from visor.broker import Broker, BrokerLock, LoopbackHTTPServer
 from visor.layout import Rect, arrange
 from visor.mcp import handle
 from visor.platforms import WindowNotFound, WindowUnavailable
@@ -164,6 +164,48 @@ class StoreCase(unittest.TestCase):
             db.execute("UPDATE messages SET created=?", (time.time() - 61,))
         held = self.store.enqueue(self.a, self.b, "Another reply", "25")
         self.assertEqual(held["state"], "held")
+
+    def test_delete_messages_in_every_state_prevents_replay(self):
+        for state in ("queued", "held", "sending", "delivered", "delivery_unknown",
+                      "acknowledged", "completed", "failed"):
+            with self.subTest(state=state):
+                message = self.store.enqueue("operator", self.b, "Private text", state, operator=True)
+                with self.store.connect(True) as db:
+                    db.execute("UPDATE messages SET state=? WHERE id=?", (state, message["id"]))
+                self.assertEqual(self.store.delete_messages([message["id"]]), 1)
+                self.store.delivery_result(message["id"], "delivered")
+                self.store.transport_received(self.b, message["id"])
+                with self.assertRaises(PolicyError):
+                    self.store.acknowledge(self.b, message["id"], completed=True)
+                with self.assertRaises(PolicyError):
+                    self.store.enqueue("operator", self.b, "Private text", state, operator=True)
+                self.assertEqual(self.store.message(message["id"])["state"], "deleted")
+                self.assertEqual(self.store.message(message["id"])["body"], "[deleted]")
+                self.assertEqual(self.store.delete_messages([message["id"]]), 0)
+        self.assertEqual(self.store.messages(visible=True), [])
+        self.assertEqual(self.store.receipt_messages(self.b), [])
+        self.assertIsNone(self.store.claim())
+        self.store.enqueue("operator", self.b, "New text", "new", operator=True)
+        self.assertIsNotNone(self.store.claim())
+
+    def test_visible_history_filters_before_limit(self):
+        active = self.send()
+        cleared = self.store.enqueue("operator", self.b, "Old", "clear", operator=True)
+        with self.store.connect(True) as db:
+            db.execute("UPDATE messages SET state='completed' WHERE id=?", (cleared["id"],))
+            db.execute("UPDATE messages SET state='delivery_unknown' WHERE id=?", (active["id"],))
+        self.store.clear_history()
+        self.assertEqual(self.store.messages(limit=1, visible=True)[0]["id"], active["id"])
+
+    def test_loopback_broker_binding_does_not_use_dns(self):
+        from http.server import BaseHTTPRequestHandler
+        with patch("socket.getfqdn", side_effect=AssertionError("Must not resolve DNS")):
+            server = LoopbackHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+            try:
+                self.assertEqual(server.server_name, "127.0.0.1")
+                self.assertGreater(server.server_port, 0)
+            finally:
+                server.server_close()
 
     def test_clear_history_preserves_pending_and_dedup(self):
         message = self.send()

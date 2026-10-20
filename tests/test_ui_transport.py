@@ -52,6 +52,23 @@ class UICase(unittest.TestCase):
         self.window.deleteLater()
         self.app.processEvents()
 
+    def test_delete_selected_messages_regardless_of_state(self):
+        self.window.snapshot["messages"] = [
+            {"id": state, "sender": "operator", "recipient": "test", "created": 0,
+             "body": "Test", "detail": "", "state": state}
+            for state in ("queued", "delivery_unknown", "completed")]
+        self.window.render_messages()
+        for row, state in enumerate(("queued", "delivery_unknown", "completed")):
+            self.window.messages.selectRow(row)
+            with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), \
+                    patch.object(self.window, "rpc") as rpc:
+                self.window.delete_messages()
+                rpc.assert_called_once_with("delete_messages", messages=[state])
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.No), \
+                patch.object(self.window, "rpc") as rpc:
+            self.window.delete_messages(["delivery_unknown"])
+            rpc.assert_not_called()
+
     def test_title_controls_and_operator_composer(self):
         buttons = self.window.findChildren(QPushButton)
         reset = next(b for b in buttons if b.accessibleName() == "Restore default size")

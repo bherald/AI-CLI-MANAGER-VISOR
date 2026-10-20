@@ -2,7 +2,7 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. The supervisor provides discovery, exact-session launch/resume, Focus, arrangement, operator messages, approved agent pairs, and graceful wrap-up tracking.
 
-**Beta 0.1.0b1 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: initial hosted builds found failures, and desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**Beta 1.2.0 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: initial hosted builds found failures, and desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
 
 Source is MIT licensed. Provider accounts, provider software and their normal permissions remain yours to manage. VISOR does not bypass provider approvals.
 
@@ -148,3 +148,5 @@ This is the actual Linux offscreen UI with an empty session list, not a Mac scre
 Related implementations reviewed: [wmux](https://github.com/amirlehmam/wmux) for owned terminals/single-instance activation, [Agent Session Hub](https://github.com/vinzify/Agent-Session-Hub) for discovery/resume, [Agent Deck](https://github.com/asheshgoplani/agent-deck) for broader session management, and [Windows Terminal foreground handoff](https://github.com/microsoft/terminal/blob/main/src/cascadia/WindowsTerminal/WindowEmperor.cpp). No implementation code from those projects was copied. Versioned Qt/PySide license and attribution files are preserved separately under `third_party`.
 
 Other primary references: [Codex CLI](https://developers.openai.com/codex/cli/reference/), [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Claude channels and availability](https://code.claude.com/docs/en/channels), [Qt for Python](https://doc.qt.io/qtforpython-6/), and [PyInstaller native builds](https://pyinstaller.org/en/stable/operating-mode.html).
+
+In **Session communication**, select messages and choose **Delete selected messages…**, or right-click a message and choose **Delete message…**. This works in every state, including `delivery_unknown`. Pending delivery is cancelled; text already sent to a session cannot be retracted.

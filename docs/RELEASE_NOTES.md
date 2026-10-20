@@ -1,4 +1,6 @@
-# 0.1.0b1 — first source beta candidate
+# 1.2.0 — beta
+
+Message history now supports deleting selected messages in every delivery state, including uncertain delivery. Deletion cancels queued delivery, removes message text from Visor, and preserves request IDs against accidental replay. Already delivered text cannot be retracted. Cleared history records are hidden from the communication list.
 
 Source beta published. No binary GitHub Release has been published.
 

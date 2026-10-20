@@ -96,6 +96,27 @@ class BrokerProcessCase(unittest.TestCase):
         with self.assertRaises(PolicyError):
             self.client.call("register", provider="claude", native_id=sid, name="Stale", cwd=str(self.root))
 
+    def test_operator_can_delete_uncertain_message_but_agent_cannot(self):
+        key = self.client.call("register", provider="claude", native_id=str(uuid.uuid4()),
+                               name="Message deletion", cwd=str(self.root))
+        message = self.client.call("send", recipient=key, body="Delete me", request_id="delete-message")
+        store = Store(self.root)
+        with store.connect(True) as db:
+            db.execute("UPDATE messages SET state='delivery_unknown' WHERE id=?", (message["id"],))
+        for role in ("agent", "helper"):
+            agent = Client(self.root, store.issue_credential(key, role))
+            with self.assertRaises(PolicyError):
+                agent.call("delete_messages", messages=[message["id"]])
+        self.assertEqual(self.client.call("delete_messages", messages=[message["id"]]), 1)
+        self.assertEqual(self.client.call("snapshot")["messages"], [])
+        self.client.call("stop")
+        self.process.wait(timeout=5)
+        self.process.communicate()
+        self.start()
+        self.assertEqual(self.client.call("snapshot")["messages"], [])
+        with self.assertRaises(PolicyError):
+            self.client.call("send", recipient=key, body="Delete me", request_id="delete-message")
+
     def test_invalid_token_rejected(self):
         with self.assertRaises(PolicyError):
             Client(self.root, "invalid").call("snapshot")

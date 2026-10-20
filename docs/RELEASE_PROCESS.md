@@ -15,7 +15,7 @@ macOS does not block a Windows or Linux beta release. Each published platform ne
 
 1. Run the native pipeline on that platform. Retain its manifest, archive and adjacent SHA-256 file. Use the native acceptance checklist and record remaining limits.
 2. Complete the dependency-distribution review, including actual bundled libraries and Qt source/replacement obligations. Keep unsigned status and clean-machine prerequisites explicit.
-3. Prepare a GitHub prerelease tag such as `v0.1.0b1`, targeting the reviewed public source commit. The release description must identify which platform assets are attached and tested. Never reuse an old alpha archive with a beta filename.
+3. Prepare a GitHub prerelease tag such as `v1.2.0`, targeting the reviewed public source commit. The release description must identify which platform assets are attached and tested. Never reuse an old alpha archive with a beta filename.
 4. After release approval, attach only the checked platform archives/checksums. CI artifacts are temporary evaluation output, not automatically published releases.
 5. Download each published archive, verify its checksum and read back the release description and asset list. Keep a receipt with commit, architecture and test scope. A later platform can be attached after its own review.
 

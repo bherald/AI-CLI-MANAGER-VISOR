@@ -43,9 +43,18 @@ def main():
     else:
         previous = work / "previous installation"
         previous.mkdir()
-        old_exe = previous / exe.name
-        shutil.copy2(exe, old_exe)
-        shutil.copytree(exe.parent / "_internal", previous / "_internal", symlinks=True)
+        if sys.platform == "darwin":
+            # A signed Mac helper needs its complete Frameworks/Resources layout.
+            bundle = exe.parent.parent.parent
+            if bundle.suffix != ".app" or exe.parent.name != "MacOS":
+                raise SystemExit("Expected a bundled Mac console helper")
+            relocated = previous / bundle.name
+            shutil.copytree(bundle, relocated, symlinks=True)
+            old_exe = relocated / exe.relative_to(bundle)
+        else:
+            old_exe = previous / exe.name
+            shutil.copy2(exe, old_exe)
+            shutil.copytree(exe.parent / "_internal", previous / "_internal", symlinks=True)
     data = work / "isolated data"
     empty_path = work / "empty-path"
     empty_path.mkdir()

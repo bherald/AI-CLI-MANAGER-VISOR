@@ -248,6 +248,7 @@ class Window(QMainWindow):
         self.messages.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.messages.customContextMenuRequested.connect(self.message_menu)
         body.addWidget(self.messages, 1)
+        body.addWidget(button("Delete selected messages…", self.delete_messages))
         compose = QHBoxLayout()
         self.recipient = QComboBox()
         self.recipient.setMinimumWidth(140)
@@ -532,6 +533,7 @@ class Window(QMainWindow):
         menu.addAction("View message", lambda: QMessageBox.information(self, "Message", message["body"] + "\n\n" + message["detail"]))
         if message["state"] == "held":
             menu.addAction("Release held message", lambda: self.rpc("release", message=message["id"]))
+        menu.addAction("Delete message…", lambda: self.delete_messages([message["id"]]))
         menu.exec(self.messages.viewport().mapToGlobal(point))
 
     def select_recipient(self, key):
@@ -680,6 +682,18 @@ class Window(QMainWindow):
                 for index in self.sessions.selectionModel().selectedRows()]
         self.rpc(action, sessions=keys, area=asdict(Rect(area.x(), area.y(), area.width(), area.height())),
                  monitor=screen.name(), **extra)
+
+    def delete_messages(self, ids=None):
+        if not isinstance(ids, list):
+            ids = [self.messages.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
+                   for index in self.messages.selectionModel().selectedRows()]
+        if not ids:
+            return
+        if QMessageBox.question(self, "Delete messages",
+                                f"Delete {len(ids)} selected message(s) from Visor? "
+                                "Queued messages will be cancelled. Anything already sent "
+                                "cannot be retracted from the receiving session.") == QMessageBox.StandardButton.Yes:
+            self.rpc("delete_messages", messages=ids)
 
     def clear_history(self):
         if QMessageBox.question(self, "Clear message text", "Clear completed and failed message text? Pending and uncertain messages, and deduplication records, will remain.") == QMessageBox.StandardButton.Yes:

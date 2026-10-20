@@ -15,6 +15,7 @@ import uuid
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 
 from .claude import OPTIONS as CLAUDE_OPTIONS
 from .claude import discover as discover_claude
@@ -37,7 +38,7 @@ from .providers import (
 from .store import PolicyError, Store
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-20-beta-2"
+BUILD = "2026-10-20-beta-3"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -93,7 +94,7 @@ class Broker:
             return self.agent_action(action, params, identity)
         if action == "snapshot":
             return {"sessions": self.store.sessions(), "pairs": self.store.pairs(),
-                    "messages": self.store.messages(), "agent_enabled": self.store.get_setting("agent_enabled", False),
+                    "messages": self.store.messages(visible=True), "agent_enabled": self.store.get_setting("agent_enabled", False),
                     "shutdown_targets": self.store.get_setting("shutdown_targets", []),
                     "wrap_up_progress": self.wrap_up_progress(),
                     "delivery_error": self.delivery_error, "refresh_error": self.refresh_error,
@@ -117,7 +118,7 @@ class Broker:
             self.store.set_external_focus(params["session"], None)
             return True
         if action == "ping":
-            return {"running": True, "version": "0.1.0b1", "build": BUILD}
+            return {"running": True, "version": "1.2.0", "build": BUILD}
         if action == "refresh":
             return self.refresh_providers()
         if action == "claude_options":
@@ -195,6 +196,9 @@ class Broker:
         if action == "release":
             self.store.release(params["message"])
             return True
+        if action == "delete_messages":
+            with self.delivery_lock:
+                return self.store.delete_messages(params["messages"])
         if action == "clear_history":
             return self.store.clear_history()
         if action == "cancel_shutdown_tracking":
@@ -615,6 +619,14 @@ class Broker:
                 log.debug("Receipt reconciliation failed", exc_info=True)
 
 
+class LoopbackHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # This local RPC endpoint has no hostname requirement. HTTPServer's default
+        # getfqdn() can block startup on hosts with slow or broken reverse DNS.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 class BrokerLock:
     def __init__(self, path):
         self.file = open(path, "a+b")  # noqa: SIM115 -- held for broker lifetime, closed by close()
@@ -673,7 +685,7 @@ def serve(root: Path):
             self.end_headers()
             self.wfile.write(content)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = LoopbackHTTPServer(("127.0.0.1", 0), Handler)
     # Complete in-flight responses before process exit releases the broker lock.
     # In particular, stop sets the event before its HTTP response has been written.
     server.daemon_threads = False
