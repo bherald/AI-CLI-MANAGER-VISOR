@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "visor": {
+      "command": "${VISOR_EXECUTABLE}",
+      "args": ["--mcp", "--credential", "${VISOR_AGENT_CREDENTIAL}"]
+    }
+  }
+}

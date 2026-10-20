@@ -1,0 +1,5 @@
+{
+  "name": "visor",
+  "version": "0.1.0",
+  "description": "Session-scoped VISOR messaging channel and acknowledgment tools."
+}
