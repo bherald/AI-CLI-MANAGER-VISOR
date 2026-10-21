@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import secrets
 import sqlite3
 import time
@@ -53,6 +54,9 @@ class Store:
             for column in ("helper_identity", "window_identity"):
                 if column not in columns:
                     db.execute(f"ALTER TABLE sessions ADD COLUMN {column} TEXT")
+            columns = {r[1] for r in db.execute("PRAGMA table_info(sessions)")}
+            if "last_used" not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN last_used REAL")
             db.execute("CREATE INDEX IF NOT EXISTS messages_pending ON messages(state,recipient,created)")
             db.execute("PRAGMA user_version=1")
 
@@ -127,12 +131,15 @@ class Store:
                 VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated""",
                        (key, provider, native_id, name, cwd, time.time()))
             self._update(db, key, fields)
+            activity = fields.get("updated")
+            if isinstance(activity, (int, float)) and not isinstance(activity, bool) and math.isfinite(activity) and activity > 0:
+                db.execute("UPDATE sessions SET last_used=MAX(COALESCE(last_used,0),?) WHERE id=?", (activity, key))
         return key
 
     @staticmethod
     def _update(db, key, fields):
         allowed = {"name", "cwd", "status", "latest", "updated", "managed", "participates",
-                   "window_token", "heartbeat", "process_id", "shutdown", "helper_identity", "window_identity"}
+                   "window_token", "heartbeat", "process_id", "shutdown", "helper_identity", "window_identity", "last_used"}
         if fields.keys() - allowed:
             raise PolicyError("Invalid session fields")
         for field, value in fields.items():

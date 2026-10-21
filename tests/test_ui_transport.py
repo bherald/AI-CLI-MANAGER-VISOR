@@ -74,6 +74,59 @@ class UICase(unittest.TestCase):
             self.window.delete_messages(["delivery_unknown"])
             rpc.assert_not_called()
 
+    def test_session_sorting_dates_selection_and_actions_survive_refresh(self):
+        self.window.snapshot["sessions"] = [
+            {"id": key, "native_id": key, "name": name, "cwd": "fixture", "provider": "codex",
+             "status": "idle", "latest": "fixture", "participates": False, "heartbeat": None,
+             "last_used": used}
+            for key, name, used in [("old", "Zulu", 10), ("new", "Alpha", 200), ("unknown", "Middle", None)]]
+        self.window.render_sessions()
+        table = self.window.sessions
+        self.assertEqual(table.horizontalHeaderItem(4).text(), "Last used")
+        self.assertEqual([table.item(r, 0).data(Qt.ItemDataRole.UserRole) for r in range(3)], ["new", "old", "unknown"])
+        table.sortItems(0, Qt.SortOrder.DescendingOrder)
+        table.selectRow(0)
+        self.window.render_sessions()
+        self.assertEqual(table.item(0, 0).text(), "Zulu")
+        self.assertEqual(table.item(table.selectionModel().selectedRows()[0].row(), 0).data(Qt.ItemDataRole.UserRole), "old")
+        with patch.object(self.window, "focus_or_resume") as launch:
+            next(b for b in table.cellWidget(0, 5).findChildren(QPushButton) if b.text() == "Resume").click()
+            launch.assert_called_once_with("old", False)
+        table.sortItems(4, Qt.SortOrder.AscendingOrder)
+        self.assertEqual([table.item(r, 0).data(Qt.ItemDataRole.UserRole) for r in range(3)], ["unknown", "old", "new"])
+        self.window.restore_ui({"columns": [230, 75, 95, 250, 165], "sort_column": 4, "sort_descending": True})
+        self.assertEqual(table.columnWidth(5), 165)
+        self.assertEqual(table.horizontalHeader().sortIndicatorOrder(), Qt.SortOrder.DescendingOrder)
+
+    def test_resize_cursors_cover_edges_corners_and_restore_text_cursor(self):
+        base = self.window.centralWidget()
+        base.setCursor(Qt.CursorShape.IBeamCursor)
+        w, h = self.window.width(), self.window.height()
+        for point, shape in [(QPoint(1, 100), Qt.CursorShape.SizeHorCursor),
+                             (QPoint(w - 1, 100), Qt.CursorShape.SizeHorCursor),
+                             (QPoint(100, 1), Qt.CursorShape.SizeVerCursor),
+                             (QPoint(100, h - 1), Qt.CursorShape.SizeVerCursor),
+                             (QPoint(1, 1), Qt.CursorShape.SizeFDiagCursor),
+                             (QPoint(w - 1, h - 1), Qt.CursorShape.SizeFDiagCursor),
+                             (QPoint(w - 1, 1), Qt.CursorShape.SizeBDiagCursor),
+                             (QPoint(1, h - 1), Qt.CursorShape.SizeBDiagCursor)]:
+            self.window.update_resize_cursor(base, point)
+            self.assertEqual(base.cursor().shape(), shape)
+        self.window.update_resize_cursor(base, QPoint(100, 100))
+        self.assertEqual(base.cursor().shape(), Qt.CursorShape.IBeamCursor)
+        QTest.mouseMove(base, QPoint(1, 200))
+        self.assertEqual(base.cursor().shape(), Qt.CursorShape.SizeHorCursor)
+        QTest.mouseMove(base, QPoint(100, 200))
+        self.assertEqual(base.cursor().shape(), Qt.CursorShape.IBeamCursor)
+
+    def test_compact_session_and_message_rows(self):
+        self.assertEqual(self.window.sessions.verticalHeader().defaultSectionSize(), 25)
+        self.assertEqual(self.window.messages.verticalHeader().defaultSectionSize(), 25)
+        controls = {b.text(): b for b in self.window.arrange_box.findChildren(QPushButton)}
+        with patch.object(self.window, "arrange") as arrange:
+            controls["Cascade"].click()
+            arrange.assert_called_once_with("arrange", mode="Cascade")
+
     def test_title_controls_and_operator_composer(self):
         buttons = self.window.findChildren(QPushButton)
         reset = next(b for b in buttons if b.accessibleName() == "Restore default size")
@@ -191,11 +244,27 @@ class UICase(unittest.TestCase):
         self.window.snapshot = {"sessions": [session], "pairs": [], "messages": [],
                                 "external_focus": {"codex:a": {"identity": {"pid": 42}}}}
         self.window.render_sessions()
-        buttons = self.window.sessions.cellWidget(0, 4).findChildren(QPushButton)
+        buttons = self.window.sessions.cellWidget(0, 5).findChildren(QPushButton)
         self.assertIn("Focus", [b.text() for b in buttons])
-        self.assertIn("0 managed open", self.window.counts.text())
+        self.assertIn("0 VISOR terminals", self.window.counts.text())
         self.window.open_only.setChecked(True)
         self.assertEqual(self.window.sessions.rowCount(), 0)
+
+    def test_independent_working_sessions_explain_empty_terminal_filter(self):
+        self.window.snapshot["sessions"] = [
+            {"id": key, "native_id": key, "provider": "codex", "name": key, "cwd": "project",
+             "status": "working", "latest": "", "participates": False, "heartbeat": None}
+            for key in ("first", "second")]
+        self.window.render_sessions()
+        self.assertIn("2 working shown", self.window.counts.text())
+        self.window.open_only.setChecked(True)
+        self.assertEqual(self.window.sessions.rowCount(), 0)
+        self.assertIn("0 working shown", self.window.counts.text())
+        self.assertTrue(self.window.session_hint.isVisible())
+        self.assertIn("independent terminals", self.window.session_hint.text())
+        self.window.clear_session_filters()
+        self.assertEqual(self.window.sessions.rowCount(), 2)
+        self.assertFalse(self.window.session_hint.isVisible())
 
     def test_connect_discovers_sessions_from_empty_registry(self):
         session = {"id": "codex:a", "native_id": "a", "provider": "codex", "name": "Discovered",
@@ -279,7 +348,7 @@ class UICase(unittest.TestCase):
                 return snapshot if action == "snapshot" else []
 
         self.window.client = Client()
-        more = next(b for b in self.window.sessions.cellWidget(0, 4).findChildren(QPushButton) if b.menu())
+        more = next(b for b in self.window.sessions.cellWidget(0, 5).findChildren(QPushButton) if b.menu())
         menu = more.menu()
         # Snapshot may already be in flight when the operator opens the menu.
         self.window.poll()

@@ -30,3 +30,6 @@ launch-*.json
 claude-hook-*.json
 claude-settings-*.json
 
+
+# Local browser verification receipts
+.playwright-mcp/

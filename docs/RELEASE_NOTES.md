@@ -1,3 +1,12 @@
+# 1.2.3 — session list and Linux desktop improvements
+
+- Add Last used dates from provider activity or VISOR launch, without treating refresh/heartbeat as use.
+- Sort every session column; preserve sorting and selected session identities across refreshes and save sorting with UI preferences.
+- Add classic overlapping Cascade windows with visible title bars and a clearly labelled Stacked tile action, with pixel-complete tiled layouts.
+- Show horizontal, vertical and diagonal resize cursors and restore normal widget cursors away from the border.
+- Reduce session and communication rows to 25 pixels and tighten control padding and spacing.
+- Clarify the VISOR terminal filter, explain empty filtered lists, and count working/waiting sessions among the displayed rows.
+
 # 1.2.1 — Windows npm Codex compatibility
 
 Fixes the “native provider executable is required” error when Windows finds npm's `codex.cmd`, `codex.ps1` or extensionless shim. VISOR locates the selected installation's declared `@openai/codex` entry point and invokes it with `node.exe`. This preserves upstream vendor/helper paths, package metadata, standard input/output and literal command arguments. Resume, discovery, daemon startup, delivery and `--doctor` use the same command prefix. Native executables remain supported.

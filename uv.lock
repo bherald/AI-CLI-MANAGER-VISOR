@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "ai-cli-manager-visor"
-version = "1.2.1"
+version = "1.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "psutil" },

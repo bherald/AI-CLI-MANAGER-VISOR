@@ -5,6 +5,7 @@ import time
 import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from itertools import pairwise
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,6 +39,17 @@ class StoreCase(unittest.TestCase):
 
     def send(self, **kwargs):
         return self.store.enqueue(self.a, self.b, "Hello", "once", **kwargs)
+
+    def test_last_used_tracks_activity_and_never_refresh_or_stale_metadata(self):
+        self.assertIsNone(self.store.session(self.a)["last_used"])
+        self.store.upsert_session("codex", "a", "A", str(self.root), updated=100)
+        self.assertEqual(self.store.session(self.a)["last_used"], 100)
+        self.store.upsert_session("codex", "a", "A", str(self.root))
+        self.store.upsert_session("codex", "a", "A", str(self.root), updated=50)
+        self.assertEqual(self.store.session(self.a)["last_used"], 100)
+        self.store.update_session(self.a, last_used=200)
+        self.store.upsert_session("codex", "a", "A", str(self.root), updated=150)
+        self.assertEqual(Store(self.root).session(self.a)["last_used"], 200)
 
     def test_provider_qualified_identity(self):
         other = self.store.upsert_session("claude", "a", "Other", str(self.root))
@@ -528,6 +540,27 @@ class LayoutCase(unittest.TestCase):
             for rect in rectangles:
                 self.assertEqual(rect, rect.clamped(screen))
                 self.assertGreater(rect.width, 0)
+
+    def test_stacked_tiles_fill_odd_monitor_height_without_gaps(self):
+        area = Rect(-997, 21, 997, 751)
+        tiles = arrange(3, area, "Stacked")
+        self.assertEqual(tiles, arrange(3, area, "Rows"))
+        self.assertEqual(sum(tile.height for tile in tiles), area.height)
+        self.assertEqual(tiles[0].y, area.y)
+        self.assertEqual(tiles[-1].y + tiles[-1].height, area.y + area.height)
+        for a, b in pairwise(tiles):
+            self.assertEqual(a.y + a.height, b.y)
+            self.assertEqual(a.width, area.width)
+
+    def test_classic_cascade_exposes_title_bars_and_wraps_on_screen(self):
+        area = Rect(-1920, 0, 1920, 1080)
+        rects = arrange(20, area, "Cascade")
+        self.assertEqual(rects[1].x - rects[0].x, 28)
+        self.assertEqual(rects[1].y - rects[0].y, 28)
+        self.assertEqual(rects[0].width, 1440)
+        self.assertEqual(rects[0].height, 810)
+        for rect in rects:
+            self.assertEqual(rect, rect.clamped(area))
 
     def test_disconnected_monitor_clamped(self):
         self.assertEqual(Rect(-1920, 10, 1600, 900).clamped(Rect(0, 0, 1280, 720)), Rect(0, 0, 1280, 720))

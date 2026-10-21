@@ -38,7 +38,7 @@ from .providers import (
 from .store import PolicyError, Store
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-20-beta-4"
+BUILD = "2026-10-21-beta-2"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -118,7 +118,7 @@ class Broker:
             self.store.set_external_focus(params["session"], None)
             return True
         if action == "ping":
-            return {"running": True, "version": "1.2.1", "build": BUILD}
+            return {"running": True, "version": "1.2.3", "build": BUILD}
         if action == "refresh":
             return self.refresh_providers()
         if action == "claude_options":
@@ -295,7 +295,7 @@ class Broker:
             if session["provider"] != "claude":
                 raise PolicyError("Claude hooks require a Claude session")
             state = hook_event(params["event"], identity)
-            self.store.update_session(identity, status=state["status"], latest=state["latest"])
+            self.store.update_session(identity, status=state["status"], latest=state["latest"], last_used=time.time())
             self.store.set_setting("claude_runtime:" + identity, {**state, "observed": time.time()})
             return True
         if action == "heartbeat":
@@ -373,6 +373,7 @@ class Broker:
                                   window_identity=None, shutdown="", latest="Terminal launch requested")
         try:
             terminal_launch([*own_command(console=True), "--terminal", str(ticket)], session["cwd"], title)
+            self.store.update_session(key, last_used=time.time())
         except Exception:
             self.store.update_session(key, window_token=None, latest="Terminal launch failed")
             raise

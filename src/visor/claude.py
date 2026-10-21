@@ -157,6 +157,9 @@ def discover(exe=None, config_dir=None):
                 warning = "Claude agent-view discovery failed; saved history remains available"
             else:
                 for item in parse_roster(json.loads(output.stdout)):
+                    saved = sessions.get(item["native_id"], {})
+                    if "updated" in saved:
+                        item["updated"] = saved["updated"]
                     sessions[item["native_id"]] = item
         else:
             warning = "Claude live discovery requires 2.1.290+; managed sessions use hooks, saved history is available"

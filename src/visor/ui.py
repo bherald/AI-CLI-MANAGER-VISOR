@@ -42,15 +42,16 @@ STYLE = """
 QWidget { background: #111c24; color: #e1eaf0; font-size: 13px; }
 QMainWindow { border: 1px solid #48616f; }
 QPushButton, QComboBox, QLineEdit { background: #192a36; border: 1px solid #425d6d;
-    border-radius: 4px; padding: 5px 8px; min-height: 20px; }
+    border-radius: 4px; padding: 3px 6px; min-height: 18px; }
 QPushButton:hover { border-color: #00cdd2; background: #233b47; }
 QPushButton:disabled { color: #70818d; border-color: #2a3c46; }
 QPushButton#primary { background: #00bfc7; color: #07181d; font-weight: 600; }
-QPushButton#section { text-align: left; border: 0; border-bottom: 1px solid #354b59; }
+QPushButton#section { text-align: left; border: 0; border-bottom: 1px solid #354b59; min-height: 16px; padding: 2px 4px; }
+QTableWidget QPushButton { min-height: 16px; padding: 1px 4px; font-size: 12px; }
 QTableWidget { background: #101b23; alternate-background-color: #14232d;
     gridline-color: #293e4b; border: 1px solid #354b59; selection-background-color: #214653; }
 QHeaderView::section { background: #182b38; color: #b9d0df; border: 0;
-    border-right: 1px solid #2b424f; padding: 5px; }
+    border-right: 1px solid #2b424f; padding: 3px; }
 QScrollBar:vertical { width: 12px; background: #14232d; }
 QScrollBar::handle:vertical { background: #536d7c; min-height: 24px; border-radius: 4px; }
 QSplitter::handle { background: #354b59; height: 4px; }
@@ -90,7 +91,8 @@ def table(headers):
     widget = QTableWidget(0, len(headers))
     widget.setHorizontalHeaderLabels(headers)
     widget.verticalHeader().hide()
-    widget.verticalHeader().setDefaultSectionSize(33)
+    widget.verticalHeader().setMinimumSectionSize(23)
+    widget.verticalHeader().setDefaultSectionSize(25)
     widget.setAlternatingRowColors(True)
     widget.setWordWrap(False)
     widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -99,6 +101,15 @@ def table(headers):
     widget.horizontalHeader().setMinimumSectionSize(40)
     widget.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
     return widget
+
+
+class SessionItem(QTableWidgetItem):
+    def __init__(self, text, sort_value=None):
+        super().__init__(text)
+        self.sort_value = text.casefold() if sort_value is None else sort_value
+
+    def __lt__(self, other):
+        return self.sort_value < other.sort_value if isinstance(other, SessionItem) else super().__lt__(other)
 
 
 class Title(QWidget):
@@ -145,11 +156,12 @@ class Window(QMainWindow):
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(840, 460)
         self.setMouseTracking(True)
+        self._resize_cursor_target = None
         base = QWidget()
         self.setCentralWidget(base)
         outer = QVBoxLayout(base)
         outer.setContentsMargins(7, 7, 7, 4)
-        outer.setSpacing(6)
+        outer.setSpacing(4)
         outer.addWidget(Title(self))
         search = QHBoxLayout()
         self.search = QLineEdit()
@@ -186,8 +198,11 @@ class Window(QMainWindow):
         for screen in QApplication.screens():
             self.monitors.addItem(screen.name())
         row.addWidget(self.monitors)
-        for mode in ("Grid", "Columns", "Rows", "Cascade"):
-            row.addWidget(button(mode, lambda checked=False, m=mode: self.arrange("arrange", mode=m)))
+        for mode in ("Grid", "Columns", "Stacked", "Cascade"):
+            control = button(mode, lambda checked=False, m=mode: self.arrange("arrange", mode=m))
+            control.setToolTip({"Stacked": "Tile windows top-to-bottom without overlap",
+                                "Cascade": "Overlap windows with each title bar visible"}.get(mode, ""))
+            row.addWidget(control)
         row.addWidget(button("Save layout", lambda: self.arrange("save_layout")))
         row.addWidget(button("Restore", lambda: self.arrange("restore_layout")))
         self.arrange_box.hide()
@@ -196,26 +211,34 @@ class Window(QMainWindow):
 
         stats = QHBoxLayout()
         self.counts = QLabel("No sessions registered")
-        self.open_only = QCheckBox("Managed terminals only")
-        self.open_only.setToolTip("Show only terminals with a current VISOR helper heartbeat; other Codex sessions are hidden.")
+        self.open_only = QCheckBox("VISOR terminals only")
+        self.open_only.setToolTip("Show terminals reporting to VISOR through its helper. Sessions running independently are hidden, even when the provider reports them as working.")
         self.open_only.toggled.connect(self.render_sessions)
         stats.addWidget(self.counts, 1)
         stats.addWidget(self.open_only)
         stats.addWidget(button("Show all", self.clear_session_filters))
         outer.addLayout(stats)
+        self.session_hint = QLabel()
+        self.session_hint.setWordWrap(True)
+        self.session_hint.hide()
+        outer.addWidget(self.session_hint)
         self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.sessions = table(["Session / project", "Provider", "Status", "Latest update", "Actions"])
+        self.sessions = table(["Session / project", "Provider", "Status", "Latest update", "Last used", "Actions"])
         self.sessions.setColumnWidth(0, 230)
         self.sessions.setColumnWidth(1, 75)
         self.sessions.setColumnWidth(2, 95)
         self.sessions.setColumnWidth(3, 250)
         self.sessions.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.sessions.horizontalHeader().setStretchLastSection(False)
-        self.sessions.setColumnWidth(4, 165)
+        self.sessions.setColumnWidth(4, 145)
+        self.sessions.setColumnWidth(5, 165)
+        self.sessions.setSortingEnabled(True)
+        self.sessions.sortItems(4, Qt.SortOrder.DescendingOrder)
         self.splitter.addWidget(self.sessions)
         self.communication = QWidget()
         communication = QVBoxLayout(self.communication)
         communication.setContentsMargins(0, 0, 0, 0)
+        communication.setSpacing(4)
         heading = QHBoxLayout()
         self.comm_toggle = button("v Session communication")
         self.comm_toggle.setObjectName("section")
@@ -226,6 +249,7 @@ class Window(QMainWindow):
         communication.addLayout(heading)
         self.comm_body = QWidget()
         body = QVBoxLayout(self.comm_body)
+        body.setSpacing(4)
         body.setContentsMargins(0, 0, 0, 0)
         connect = QHBoxLayout()
         self.source, self.target = QComboBox(), QComboBox()
@@ -287,6 +311,8 @@ class Window(QMainWindow):
             self.rpc("ui_state", callback=self.restore_ui)
             self.poll()
             self.refresh()
+        for child in self.findChildren(QWidget):
+            child.setMouseTracking(True)
         QApplication.instance().installEventFilter(self)
 
     def job(self, function, callback):
@@ -376,6 +402,8 @@ class Window(QMainWindow):
         visible = [s for s in sessions if query in (s["name"] + " " + s["cwd"] + " " + s["native_id"]).casefold()
                    and (provider == "All providers" or s["provider"] == provider)
                    and (not self.open_only.isChecked() or self.is_open(s))]
+        self.sessions.setSortingEnabled(False)
+        self.sessions.clearContents()
         self.sessions.setRowCount(len(visible))
         for row, session in enumerate(visible):
             key = session["id"]
@@ -386,12 +414,23 @@ class Window(QMainWindow):
             if external:
                 latest += " · External window linked for Focus; check its selected tab."
             for column, text in enumerate([session["name"], session["provider"], status, latest]):
-                item = QTableWidgetItem(str(text).replace("\n", " "))
+                item = SessionItem(str(text).replace("\n", " "))
                 item.setToolTip(f"{session['cwd']}\n{key}" if column == 0 else str(text))
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 if column == 2:
                     item.setForeground(QColor("#f2bc48" if text == "waiting" else "#00d2d8" if text == "working" else "#a9bccd"))
                 self.sessions.setItem(row, column, item)
+            used = session.get("last_used")
+            try:
+                stamp = float(used) if used is not None else 0
+                date = time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp)) if stamp > 0 else "—"
+                tooltip = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(stamp)) if stamp > 0 else "Last use is not reported yet"
+            except (ValueError, TypeError, OverflowError, OSError):
+                stamp, date, tooltip = 0, "—", "Last use is unavailable"
+            item = SessionItem(date, stamp)
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            item.setToolTip(tooltip)
+            self.sessions.setItem(row, 4, item)
             actions = QWidget()
             layout = QHBoxLayout(actions)
             layout.setContentsMargins(1, 1, 1, 1)
@@ -425,13 +464,23 @@ class Window(QMainWindow):
             menu.addAction("Delete session…", lambda k=key: self.delete_session(k))
             more.setMenu(menu)
             layout.addWidget(more)
-            self.sessions.setCellWidget(row, 4, actions)
-            if key in selected:
-                for col in range(4):
+            item = SessionItem("Focus" if active else "Resume")
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self.sessions.setItem(row, 5, item)
+            self.sessions.setCellWidget(row, 5, actions)
+        self.sessions.setSortingEnabled(True)
+        for row in range(self.sessions.rowCount()):
+            if self.sessions.item(row, 0).data(Qt.ItemDataRole.UserRole) in selected:
+                for col in range(self.sessions.columnCount()):
                     self.sessions.item(row, col).setSelected(True)
-        self.counts.setText(f"{len(visible)} of {len(sessions)} sessions shown    {sum(self.is_open(s) for s in sessions)} managed open    "
-                            f"{sum(s['status'] == 'working' for s in sessions)} working    "
-                            f"{sum(s['status'] == 'waiting' for s in sessions)} need you")
+        self.counts.setText(f"{len(visible)} of {len(sessions)} sessions shown    {sum(self.is_open(s) for s in sessions)} VISOR terminals    "
+                            f"{sum(s['status'] == 'working' for s in visible)} working shown    "
+                            f"{sum(s['status'] == 'waiting' for s in visible)} need you shown")
+        self.counts.setToolTip("VISOR terminals have a current helper connection. Working and waiting counts apply to the displayed rows and use the provider's reported status.")
+        self.session_hint.setText(
+            "No sessions match these filters. VISOR terminals only hides independent terminals, even if they are working. Click Show all to restore the list."
+            if self.open_only.isChecked() else "No sessions match these filters. Click Show all to restore the list.")
+        self.session_hint.setVisible(bool(sessions) and not visible)
 
     def clear_session_filters(self):
         for widget in (self.search, self.filter, self.open_only):
@@ -720,8 +769,15 @@ class Window(QMainWindow):
         g = screen.availableGeometry()
         rect = requested.clamped(Rect(g.x(), g.y(), g.width(), g.height()))
         self.setGeometry(rect.x, rect.y, rect.width, rect.height)
-        for index, width in enumerate(value.get("columns", [])[:5]):
+        widths = value.get("columns", [])[:6]
+        if len(widths) == 5:
+            widths.insert(4, 145)  # Existing settings predate Last used.
+        for index, width in enumerate(widths):
             self.sessions.setColumnWidth(index, width)
+        column = value.get("sort_column", 4)
+        if isinstance(column, int) and 0 <= column < self.sessions.columnCount():
+            order = Qt.SortOrder.DescendingOrder if value.get("sort_descending", True) else Qt.SortOrder.AscendingOrder
+            self.sessions.sortItems(column, order)
         self.splitter.setSizes(value.get("splitter", [400, 260]))
         self.arrange_box.setVisible(value.get("arrange", False))
         self.arrange_toggle.setText(("v " if value.get("arrange") else "> ") + "Arrange windows")
@@ -770,7 +826,9 @@ class Window(QMainWindow):
 
     def save_and_close(self):
         value = {"geometry": [self.x(), self.y(), self.width(), self.height()],
-                 "columns": [self.sessions.columnWidth(i) for i in range(5)],
+                 "columns": [self.sessions.columnWidth(i) for i in range(self.sessions.columnCount())],
+                 "sort_column": self.sessions.horizontalHeader().sortIndicatorSection(),
+                 "sort_descending": self.sessions.horizontalHeader().sortIndicatorOrder() == Qt.SortOrder.DescendingOrder,
                  "splitter": self.splitter.sizes(), "arrange": self.arrange_box.isVisible(),
                  "communication": self.comm_body.isVisible()}
         def done(result, error):
@@ -795,7 +853,40 @@ class Window(QMainWindow):
             edges |= Qt.Edge.BottomEdge
         return edges
 
+    def update_resize_cursor(self, widget=None, pos=None):
+        edges = self.resize_edges(pos) if pos is not None else Qt.Edge(0)
+        shape = {Qt.Edge.LeftEdge: Qt.CursorShape.SizeHorCursor,
+                 Qt.Edge.RightEdge: Qt.CursorShape.SizeHorCursor,
+                 Qt.Edge.TopEdge: Qt.CursorShape.SizeVerCursor,
+                 Qt.Edge.BottomEdge: Qt.CursorShape.SizeVerCursor,
+                 Qt.Edge.LeftEdge | Qt.Edge.TopEdge: Qt.CursorShape.SizeFDiagCursor,
+                 Qt.Edge.RightEdge | Qt.Edge.BottomEdge: Qt.CursorShape.SizeFDiagCursor,
+                 Qt.Edge.RightEdge | Qt.Edge.TopEdge: Qt.CursorShape.SizeBDiagCursor,
+                 Qt.Edge.LeftEdge | Qt.Edge.BottomEdge: Qt.CursorShape.SizeBDiagCursor}.get(edges)
+        target = widget if shape is not None else None
+        previous = self._resize_cursor_target
+        if previous is not target:
+            if previous is not None:
+                if self._resize_cursor_explicit:
+                    previous.setCursor(self._resize_cursor_previous)
+                else:
+                    previous.unsetCursor()
+            self._resize_cursor_target = target
+            if target is not None:
+                self._resize_cursor_explicit = target.testAttribute(Qt.WidgetAttribute.WA_SetCursor)
+                self._resize_cursor_previous = target.cursor()
+        if target is not None:
+            target.setCursor(shape)
+
     def eventFilter(self, watched, event):
+        own_widget = isinstance(watched, QWidget) and QWidget.window(watched) is self
+        if own_widget and event.type() == QEvent.Type.Show:
+            watched.setMouseTracking(True)
+        if own_widget and event.type() in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease):
+            pos = self.mapFromGlobal(event.globalPosition().toPoint())
+            self.update_resize_cursor(self.childAt(pos) or self, pos)
+        elif event.type() == QEvent.Type.Leave and watched is self._resize_cursor_target or watched is self and event.type() == QEvent.Type.WindowStateChange:
+            self.update_resize_cursor()
         if (event.type() == QEvent.Type.MouseButtonPress
                 and isinstance(watched, QWidget) and QWidget.window(watched) is self
                 and event.button() == Qt.MouseButton.LeftButton and self.windowHandle()):

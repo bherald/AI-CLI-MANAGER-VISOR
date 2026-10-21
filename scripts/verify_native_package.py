@@ -24,7 +24,7 @@ def main():
     args = parser.parse_args()
     suffix = ".zip" if os.name == "nt" else ".tar.gz"
     archive = args.archive or root / "dist" / (
-        f"visor-1.2.1-{platform.system().lower()}-{platform.machine().lower()}" + suffix)
+        f"visor-1.2.3-{platform.system().lower()}-{platform.machine().lower()}" + suffix)
     work = root / ".cache" / "native-package-acceptance" / uuid.uuid4().hex / "relocated package"
     extract_archive(archive.resolve(), work)
     if sys.platform == "darwin":
