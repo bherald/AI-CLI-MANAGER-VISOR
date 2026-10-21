@@ -1,3 +1,7 @@
+# 1.2.4 — double-click console focus
+
+- Double-click a session row to focus and raise its verified existing console, including linked external consoles. Sorting preserves the clicked session identity; double-clicking never starts a second console.
+
 # 1.2.3 — session list and Linux desktop improvements
 
 - Add Last used dates from provider activity or VISOR launch, without treating refresh/heartbeat as use.

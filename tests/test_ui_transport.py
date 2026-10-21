@@ -198,6 +198,24 @@ class UICase(unittest.TestCase):
         self.assertEqual(results[0][:2], (42, None))
         self.assertEqual(results[0][2], self.app.thread())
 
+    def test_double_click_focuses_clicked_session_after_sort_without_resuming(self):
+        self.window.snapshot["sessions"] = [
+            {"id": key, "native_id": key, "provider": "codex", "name": name, "cwd": "project",
+             "status": "unknown", "latest": "", "participates": False, "heartbeat": None}
+            for key, name in (("codex:a", "Alpha"), ("codex:z", "Zulu"))]
+        self.window.snapshot["external_focus"] = {"codex:z": {"identity": {"pid": 42}}}
+        self.window.render_sessions()
+        self.window.sessions.sortItems(0, Qt.SortOrder.DescendingOrder)
+        for row, column, key in ((0, 0, "codex:z"), (1, 1, "codex:a")):
+            self.window.sessions.selectRow(1 - row)
+            item = self.window.sessions.item(row, column)
+            point = self.window.sessions.visualItemRect(item).center()
+            with patch.object(self.window, "rpc") as rpc, patch("visor.ui.QMessageBox.question") as question:
+                QTest.mouseClick(self.window.sessions.viewport(), Qt.MouseButton.LeftButton, pos=point)
+                QTest.mouseDClick(self.window.sessions.viewport(), Qt.MouseButton.LeftButton, pos=point)
+                rpc.assert_called_once_with("focus_target", session=key, callback=self.window.activate_terminal)
+                question.assert_not_called()
+
     def test_focus_verifies_in_worker_and_activates_on_ui_thread(self):
         calls, activations = [], []
         target = {"token": "terminal", "identity": {"hwnd": 123}}

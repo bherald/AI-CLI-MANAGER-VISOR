@@ -234,6 +234,8 @@ class Window(QMainWindow):
         self.sessions.setColumnWidth(5, 165)
         self.sessions.setSortingEnabled(True)
         self.sessions.sortItems(4, Qt.SortOrder.DescendingOrder)
+        self.sessions.setToolTip("Double-click a session row to bring its linked console to the foreground.")
+        self.sessions.itemDoubleClicked.connect(self.focus_session_item)
         self.splitter.addWidget(self.sessions)
         self.communication = QWidget()
         communication = QVBoxLayout(self.communication)
@@ -704,6 +706,11 @@ class Window(QMainWindow):
         question.exec()
         if question.clickedButton() == remove:
             self.rpc("delete_session", session=key, confirmed=True)
+
+    def focus_session_item(self, item):
+        key = item.data(Qt.ItemDataRole.UserRole)
+        if key:
+            self.focus_or_resume(key, True)
 
     def focus_or_resume(self, key, active):
         if active:

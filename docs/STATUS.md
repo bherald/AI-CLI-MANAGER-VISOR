@@ -1,6 +1,6 @@
 # Beta status and evidence
 
-Release candidate: **1.2.3**, build `2026-10-21-beta-2`.
+Release candidate: **1.2.4**, build `2026-10-21-beta-3`.
 
 Beta is an evaluation label. It does not mean complete platform acceptance, completed binary-distribution review, or production suitability.
 
@@ -22,3 +22,5 @@ See [Windows evidence](WINDOWS_ACCEPTANCE.md), [Linux evidence](LINUX_ACCEPTANCE
 The 1.2.1 Windows npm follow-up adds source/frozen-app checks against a disposable real Codex 0.163.0 npm installation. Its native Node fixture verifies literal arguments through paths containing spaces and shell metacharacters. This does not validate authenticated model/provider workflows on a clean user machine.
 
 The 1.2.3 UI follow-up passed 177 local tests with six platform-specific skips, Ruff, lock validation, extracted Linux package checks, a 1.2.1-to-new-install helper upgrade, desktop launcher rendering, and live disposable X11 Cascade/Stacked geometry checks. New hosted tag builds are required before publishing platform archives; their exact outcome is recorded in the release notes. No interactive Mac acceptance is claimed.
+
+The 1.2.4 follow-up adds session-row double-click through the existing verified Focus path. The UI regression checks the clicked session after sorting and prevents accidental resume. Local Linux/X11 desktop testing confirmed the selected console becomes the foreground window. Native Windows/Mac jobs run this UI test offscreen; this does not claim interactive Windows or Mac desktop acceptance. Published release notes identify the exact-tag CI outcome.
