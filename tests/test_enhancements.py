@@ -1,4 +1,5 @@
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -132,7 +133,12 @@ class BackupCase(unittest.TestCase):
                     return {"build": BUILD}
                 raise OSError("stopped")
         client = Client()
+        native_popen = subprocess.Popen
         def launch(*args, **kwargs):
+            # Windows snapshot permissions invoke PowerShell through subprocess.run.
+            # Intercept only our broker fixture, preserving that real ACL check.
+            if args[0][0] != "fixture":
+                return native_popen(*args, **kwargs)
             self.assertEqual(len(list((self.root / "backups").glob("*.sqlite3"))), 1)
             client.started = True
         with patch("visor.broker.Client", return_value=client), patch("visor.broker.subprocess.Popen", side_effect=launch), patch("visor.broker.own_command", return_value=["fixture"]):
