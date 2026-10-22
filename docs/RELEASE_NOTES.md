@@ -1,3 +1,17 @@
+# 1.3.0 — beta candidate
+
+Local pre-release validation is recorded here; exact native-build outcomes belong in the versioned release's published notes.
+
+- Preserve communication-row selection by message ID so arrival/deletion cannot redirect a selection.
+- Show the running version, build/executable diagnostics, and notices when a different/older supervisor is activated by a new download. Preserve legacy activation support.
+- Reconnect after broker failure with bounded backoff; preserve an intentional stop and ignore obsolete snapshots.
+- Persist unfinished operator drafts and recipients, serialize saves, and flush on close with save-failure warnings. Missing recipients require explicit selection.
+- Add new-console appearance settings: Ubuntu/xterm font and point size, Windows Terminal profile name/GUID, macOS Terminal profile name.
+- Add private SQLite backup snapshots, retention, opt-in pre-upgrade backup and conservative offline recovery. Restore holds queued messages and invalidates old credentials/terminal links; it does not restore provider history.
+- Add native desktop acceptance steps, current download documentation, build-space preflight and explicit inactive-build cleanup.
+
+Local/mocked tests do not establish interactive Windows/Mac acceptance. Consult the versioned release notes for hosted-build and download evidence.
+
 # 1.2.4 — double-click console focus
 
 - Double-click a session row to focus and raise its verified existing console, including linked external consoles. Sorting preserves the clicked session identity; double-clicking never starts a second console.

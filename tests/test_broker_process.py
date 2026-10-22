@@ -72,6 +72,27 @@ class BrokerProcessCase(unittest.TestCase):
         self.assertEqual(self.client.call("snapshot")["messages"][0]["state"], "completed")
         self.assertIsNone(agent.call("receive"))
 
+    def test_preferences_draft_and_backup_survive_restart_and_are_operator_only(self):
+        key = self.client.call("register", provider="claude", native_id=str(uuid.uuid4()), name="Fixture", cwd=str(self.root))
+        draft = {"text": "Private unfinished draft", "recipient": key}
+        appearance = {"linux_font": "monospace", "linux_size": 16, "windows_profile": "Visor", "mac_profile": "Visor"}
+        self.assertEqual(self.client.call("message_draft", value=draft), draft)
+        self.assertEqual(self.client.call("terminal_appearance", value=appearance), appearance)
+        self.client.call("backup_options", value={"before_upgrade": True, "keep": 2})
+        path = Path(self.client.call("backup_state"))
+        self.assertTrue(path.is_file())
+        agent = Client(self.root, Store(self.root).issue_credential(key))
+        for action in ("backup_state", "message_draft", "terminal_appearance", "backup_options"):
+            with self.subTest(action=action), self.assertRaises(PolicyError):
+                agent.call(action)
+        self.client.call("stop")
+        self.process.wait(timeout=5)
+        self.process.communicate()
+        self.start()
+        self.assertEqual(self.client.call("message_draft"), draft)
+        self.assertEqual(self.client.call("terminal_appearance"), appearance)
+        self.assertTrue(self.client.call("backup_options")["before_upgrade"])
+
     def test_delete_claude_conversation_and_visor_data(self):
         sid = str(uuid.uuid4())
         project = self.root / "claude-config" / "projects" / "project"

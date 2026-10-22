@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import sys
 import time
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-from .broker import BrokerLock
+from . import __version__
+from .broker import BUILD, BrokerLock
 from .platforms import allow_foreground
 
 
@@ -21,6 +24,7 @@ class SupervisorInstance(QObject):
         identity = os.path.normcase(str(self.root)).encode()
         self.name = "visor-ui-" + hashlib.sha256(identity).hexdigest()[:32]
         self.lock = None
+        self.notice = ""
         self.server = QLocalServer(self)
         self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self.server.newConnection.connect(self.accept)
@@ -40,6 +44,7 @@ class SupervisorInstance(QObject):
 
     def notify_existing(self):
         deadline = time.monotonic() + 5
+        probe = True
         while time.monotonic() < deadline:
             socket = QLocalSocket()
             socket.connectToServer(self.name)
@@ -47,6 +52,22 @@ class SupervisorInstance(QObject):
                 hello = self.read_line(socket, 2000)
                 if not hello.strip().isdigit():
                     break
+                if probe:
+                    socket.write(b"info\n")
+                    socket.flush()
+                    info = self.read_line(socket, 1000)
+                    if not info:
+                        # Older owners support activation only. Reconnect using that protocol.
+                        probe = False
+                        self.notice = f"An older VISOR supervisor is already running. Its window was activated. Exit it and reopen VISOR {__version__} to load this download."
+                        socket.abort()
+                        continue
+                    try:
+                        running = json.loads(info)
+                    except (ValueError, TypeError):
+                        raise RuntimeError("Existing VISOR returned invalid version information") from None
+                    if running.get("version") != __version__ or running.get("build") != BUILD:
+                        self.notice = f"VISOR {running.get('version', 'unknown')} ({running.get('build', 'unknown')}) is already running. Its window was activated; this download ({__version__}, {BUILD}) is not loaded. Exit the existing supervisor and reopen the new executable."
                 allow_foreground(int(hello))
                 socket.write(b"activate\n")
                 socket.flush()
@@ -62,9 +83,9 @@ class SupervisorInstance(QObject):
         deadline = time.monotonic() + timeout / 1000
         while not socket.canReadLine():
             remaining = int((deadline - time.monotonic()) * 1000)
-            if remaining <= 0 or socket.bytesAvailable() >= 64 or not socket.waitForReadyRead(remaining):
+            if remaining <= 0 or socket.bytesAvailable() >= 8192 or not socket.waitForReadyRead(remaining):
                 return b""
-        return bytes(socket.readLine(64))
+        return bytes(socket.readLine(8192))
 
     def accept(self):
         while self.server.hasPendingConnections():
@@ -81,7 +102,13 @@ class SupervisorInstance(QObject):
             if socket.bytesAvailable() >= 64:
                 socket.disconnectFromServer()
             return
-        if bytes(socket.readLine(64)) == b"activate\n":
+        request = bytes(socket.readLine(64))
+        if request == b"info\n":
+            payload = {"version": __version__, "build": BUILD, "executable": sys.executable}
+            socket.write((json.dumps(payload) + "\n").encode())
+            socket.flush()
+            return
+        if request == b"activate\n":
             self.activated.emit()
             socket.write(b"ok\n")
             socket.flush()

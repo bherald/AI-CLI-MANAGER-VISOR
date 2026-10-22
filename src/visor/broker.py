@@ -38,7 +38,7 @@ from .providers import (
 from .store import PolicyError, Store
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-21-beta-3"
+BUILD = "2026-10-22-beta-1"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -118,7 +118,29 @@ class Broker:
             self.store.set_external_focus(params["session"], None)
             return True
         if action == "ping":
-            return {"running": True, "version": "1.2.4", "build": BUILD}
+            return {"running": True, "version": "1.3.0", "build": BUILD}
+        if action == "terminal_appearance":
+            from .appearance import validate
+            if "value" in params:
+                self.store.set_setting("terminal_appearance", validate(params["value"]))
+            return validate(self.store.get_setting("terminal_appearance", {}))
+        if action == "backup_options":
+            from .state_backup import validate_options as validate_backup_options
+            if "value" in params:
+                self.store.set_setting("backup_options", validate_backup_options(params["value"]))
+            return validate_backup_options(self.store.get_setting("backup_options", {}))
+        if action == "backup_state":
+            from .state_backup import snapshot
+            return snapshot(self.root)
+        if action == "message_draft":
+            if "value" in params:
+                value = params["value"]
+                if (not isinstance(value, dict) or set(value) != {"text", "recipient"}
+                        or not isinstance(value["text"], str) or len(value["text"]) > 32768
+                        or value["recipient"] is not None and (not isinstance(value["recipient"], str) or len(value["recipient"]) > 256)):
+                    raise PolicyError("Invalid message draft")
+                self.store.set_setting("message_draft", value)
+            return self.store.get_setting("message_draft", {"text": "", "recipient": None})
         if action == "refresh":
             return self.refresh_providers()
         if action == "claude_options":
@@ -372,7 +394,11 @@ class Broker:
         self.store.update_session(key, managed=True, window_token=title, helper_identity=None,
                                   window_identity=None, shutdown="", latest="Terminal launch requested")
         try:
-            terminal_launch([*own_command(console=True), "--terminal", str(ticket)], session["cwd"], title)
+            appearance = self.store.get_setting("terminal_appearance", {})
+            if appearance:
+                terminal_launch([*own_command(console=True), "--terminal", str(ticket)], session["cwd"], title, appearance=appearance)
+            else:
+                terminal_launch([*own_command(console=True), "--terminal", str(ticket)], session["cwd"], title)
             self.store.update_session(key, last_used=time.time())
         except Exception:
             self.store.update_session(key, window_token=None, latest="Terminal launch failed")
@@ -711,11 +737,20 @@ def serve(root: Path):
 
 def ensure_broker(root):
     client = Client(root)
+    backup_pending = Path(root) / "upgrade-backup.json"
     try:
-        if client.call("ping").get("build") == BUILD:
-            return client
+        current_build = client.call("ping").get("build") or "unknown"
+    except (OSError, ValueError):
+        current_build = None
+        log.debug("No live broker endpoint; starting broker", exc_info=True)
+    if current_build == BUILD:
+        return client
+    if current_build is not None:
         # Upgrade the broker as well as the window. Helpers reconnect through broker.json;
         # their provider processes and durable messages remain independent.
+        from .state_backup import read_options
+        if read_options(root)["before_upgrade"]:
+            write_private(backup_pending, {"target_build": BUILD})
         client.call("stop")
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
@@ -726,8 +761,10 @@ def ensure_broker(root):
             time.sleep(0.1)
         else:
             raise RuntimeError("Previous broker is still finishing delivery; reconnect after it stops")
-    except (OSError, ValueError):
-        log.debug("No live broker endpoint; starting broker", exc_info=True)
+    if backup_pending.exists():
+        from .state_backup import snapshot
+        snapshot(root)
+        backup_pending.unlink(missing_ok=True)
     options = hidden_options()
     if os.name == "nt":
         options["creationflags"] |= subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP

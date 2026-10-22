@@ -24,4 +24,6 @@ Close the broker first. This is not secure erasure and does not remove provider 
 VISOR does not bypass provider approvals and does not execute message text as a shell command.
 Graceful wrap-up never implies permission to force-terminate processes. No telemetry is added.
 
-The maintainer is [bherald](https://github.com/bherald). For a published repository, use its Security tab and **Report a vulnerability** when private vulnerability reporting is enabled. During release preparation that route is not configured yet. Do not disclose a vulnerability containing credentials or private transcripts through a public issue or profile comment. Enabling and verifying private reporting is a repository-publication step.
+The maintainer is [bherald](https://github.com/bherald). For a published repository, use its Security tab and **Report a vulnerability** when private vulnerability reporting is enabled. Private reporting availability depends on the repository settings; verify the Security tab before submitting. Do not disclose a vulnerability containing credentials or private transcripts through a public issue or profile comment. Enabling and verifying private reporting is a repository-publication step.
+
+State snapshots remain private and can retain messages deleted after a backup. Automatic pre-upgrade backups are opt-in with bounded retention. Offline recovery invalidates old scoped credentials and terminal links and holds pending delivery. Treat exported/copied snapshots as sensitive; no provider login or provider history is included.

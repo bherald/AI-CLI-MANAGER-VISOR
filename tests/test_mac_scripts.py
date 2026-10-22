@@ -17,6 +17,7 @@ class MacScriptCase(unittest.TestCase):
         scripts = []
         with patch("visor.platforms.run", return_value=result) as run:
             terminal_launch(["/tmp/a b/helper", "--terminal", "a'b"], "/tmp/a'b", "token")
+            terminal_launch(["/tmp/helper"], "/tmp/project", "token", appearance={"mac_profile": 'Profile "quoted"'})
             for operation in ("find", "focus", "close", "geometry", "place"):
                 Mac()._call("token", operation, (0, 0, 640, 400), {"handle": "42"})
             run.side_effect = [result, subprocess.CompletedProcess([], 0, "", "")]

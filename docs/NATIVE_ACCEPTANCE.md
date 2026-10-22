@@ -95,3 +95,14 @@ Copy [NATIVE_TEST_REPORT.md](NATIVE_TEST_REPORT.md) into `.local/` and fill it i
 revision and `--doctor` output after removing home/project paths or other personal information.
 Share build errors and the completed checklist; never include credentials or private transcripts.
 Results update `ROADMAP.md` and `STATUS.md` before any platform support claim changes.
+
+## 1.3.0 desktop acceptance additions
+
+These are pending manual acceptance unless a dated platform receipt explicitly records a pass. Mocked launch commands and offscreen Qt tests are separate evidence.
+
+- Windows: exit the old supervisor, launch the candidate, confirm visible version/build/path in About. Launch another version against the same data directory and verify an older-running-window notice, not a silent upgrade. Keep existing consoles running during the supervisor-only upgrade.
+- Minimize a disposable managed Windows console, double-click its session row and verify the exact console becomes foreground. Repeat after sorting, Alt+Tab, on each monitor and at mixed DPI (100/150/200 percent). Check an externally linked console separately; verify selected tabs manually.
+- Reboot/crash recovery: use disposable sessions and unresolved messages, restart and inspect ownership, deduplication, uncertain delivery, reconnection and explicit-stop behavior. Do not treat a receipt as proof all detached work stopped.
+- Type an unfinished operator draft, change its recipient, restart the supervisor and verify both. Remove that recipient and verify the draft cannot silently target another session.
+- New terminal appearance: Ubuntu/xterm custom monospace font at 12/16 points; Windows existing named/GUID profile with distinct font; Mac existing named Terminal profile with distinct font. Check cwd, literal arguments, launch identity, Focus and close protection remain correct. An unavailable Mac profile must fail before launching a provider.
+- Backup/recovery: private paths and ACLs, snapshot during activity, retention, deliberate offline restore with held/uncertain sends, old credentials invalidated and external links cleared. Refuse restore while broker/UI/helpers remain active. Never use real provider-history deletion for this fixture.

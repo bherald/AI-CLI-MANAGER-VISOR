@@ -20,6 +20,7 @@ suite = unittest.TestSuite([
     BrokerProcessCase("test_claude_channel_cross_provider_acknowledgment_and_broker_restart"),
     BrokerProcessCase("test_delete_claude_conversation_and_visor_data"),
     BrokerProcessCase("test_external_focus_link_cannot_grant_agent_controls_or_delete_history"),
+    BrokerProcessCase("test_preferences_draft_and_backup_survive_restart_and_are_operator_only"),
 ])
 result = unittest.TextTestRunner(verbosity=2).run(suite)
 raise SystemExit(0 if result.wasSuccessful() else 1)

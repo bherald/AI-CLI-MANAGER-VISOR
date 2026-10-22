@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizeGrip,
+    QSpinBox,
     QSplitter,
     QStyle,
     QTableWidget,
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
 from .broker import ensure_broker
 from .layout import Rect
 from .platforms import enable_window_resize, focus_verified
@@ -118,7 +120,7 @@ class Title(QWidget):
         self.window = window
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 0, 0, 0)
-        label = QLabel("VISOR  ·  Session supervisor")
+        label = QLabel(f"VISOR {__version__}  ·  Session supervisor")
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(label, 1)
         for icon, tip, callback in [(QStyle.StandardPixmap.SP_TitleBarMinButton, "Minimize", window.showMinimized),
@@ -152,7 +154,16 @@ class Window(QMainWindow):
         self.refreshing = False
         self.allow_close = False
         self.shutdown_requested = False
-        self.setWindowTitle("VISOR")
+        self.reconnecting = False
+        self.broker_stopped = False
+        self.reconnect_attempt = 0
+        self.next_reconnect = 0
+        self.connection_generation = 0
+        self.draft_dirty = False
+        self.draft_recipient = None
+        self.draft_loading = False
+        self.draft_saving = False
+        self.setWindowTitle(f"VISOR {__version__}")
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(840, 460)
         self.setMouseTracking(True)
@@ -179,6 +190,11 @@ class Window(QMainWindow):
         menu = QMenu(menu_button)
         for name, callback in [("Register saved session…", self.register),
                                ("Start / reconnect broker", self.connect_broker),
+                               ("Terminal appearance…", self.terminal_appearance),
+                               ("State backup settings…", self.backup_settings),
+                               ("Back up VISOR state now", self.backup_state),
+                               ("Restore backup instructions…", self.restore_instructions),
+                               ("About / diagnostics…", self.about),
                                ("Claude Code settings…", self.claude_settings),
                                ("Stop broker…", self.stop_broker),
                                ("Clear completed / failed message text…", self.clear_history),
@@ -305,12 +321,19 @@ class Window(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.timer.start(2500)
+        self.draft_timer = QTimer(self)
+        self.draft_timer.setSingleShot(True)
+        self.draft_timer.setInterval(500)
+        self.draft_timer.timeout.connect(self.save_draft)
+        self.composer.textChanged.connect(self.draft_changed)
+        self.recipient.currentIndexChanged.connect(self.draft_changed)
         action = QAction("Exit", self)
         action.setShortcut("Alt+F4")
         action.triggered.connect(self.close)
         self.addAction(action)
         if client:
             self.rpc("ui_state", callback=self.restore_ui)
+            self.load_draft()
             self.poll()
             self.refresh()
         for child in self.findChildren(QWidget):
@@ -343,26 +366,55 @@ class Window(QMainWindow):
                 self.poll()
         self.job(lambda: client.call(action, **params), finished)
 
-    def connect_broker(self):
+    def connect_broker(self, automatic=False):
+        if self.reconnecting or automatic and self.broker_stopped:
+            return
+        if not automatic:
+            self.broker_stopped = False
+            self.reconnect_attempt = 0
+        self.reconnecting = True
+        self.connection_generation += 1
         def connected(client, error):
+            self.reconnecting = False
+            if self.broker_stopped:
+                return
             if error:
-                self.status.setText(error)
+                self.client = None
+                self.schedule_reconnect(error)
                 return
             self.client = client
+            self.reconnect_attempt = 0
+            self.next_reconnect = 0
             self.rpc("ui_state", callback=self.restore_ui)
+            self.load_draft()
             self.poll()
             self.refresh()
         self.job(lambda: ensure_broker(self.root), connected)
 
+    def schedule_reconnect(self, error):
+        delay = min(30, 2 ** min(self.reconnect_attempt, 5))
+        self.reconnect_attempt += 1
+        self.next_reconnect = time.monotonic() + delay
+        self.status.setText(f"Broker disconnected · reconnecting in {delay}s · {error}")
+
     def poll(self):
+        if self.broker_stopped:
+            return
         if self.polling:
             self.poll_pending = True
             return
-        if not self.client or QApplication.activePopupWidget() is not None:
+        if not self.client:
+            if not self.reconnecting and time.monotonic() >= self.next_reconnect:
+                self.connect_broker(automatic=True)
+            return
+        if QApplication.activePopupWidget() is not None:
             return
         self.polling = True
+        client, generation = self.client, self.connection_generation
         def finished(snapshot, error):
             self.polling = False
+            if self.broker_stopped or generation != self.connection_generation:
+                return
             if self.poll_pending:
                 self.poll_pending = False
                 QTimer.singleShot(0, self.poll)
@@ -371,7 +423,8 @@ class Window(QMainWindow):
             if QApplication.activePopupWidget() is not None:
                 return
             if error:
-                self.status.setText("Broker disconnected · " + error)
+                self.client = None
+                self.schedule_reconnect(error)
                 return
             self.snapshot = snapshot
             self.filter.setToolTip(snapshot.get("provider_warnings", {}).get("claude", ""))
@@ -390,7 +443,7 @@ class Window(QMainWindow):
                 progress = snapshot.get("wrap_up_progress", {})
                 exceeded = sum(p["state"] == "wait exceeded" for p in progress.values())
                 self.status.setText(f"Wrap-up: {confirmed}/{len(managed)} confirmed · {exceeded} wait limits exceeded. Background work needs review. Close again for details.")
-        self.job(lambda: self.client.call("snapshot"), finished)
+        self.job(lambda: client.call("snapshot"), finished)
 
     def collapse(self, widget, toggle, title):
         widget.setVisible(not widget.isVisible())
@@ -547,13 +600,17 @@ class Window(QMainWindow):
     def populate_combos(self):
         names = {s["id"]: s["name"] for s in self.snapshot["sessions"]}
         for combo in (self.source, self.target, self.recipient):
-            current = combo.currentData()
+            current = combo.currentData() or (self.draft_recipient if combo is self.recipient else None)
+            combo.blockSignals(True)
             combo.clear()
             for key, name in names.items():
                 combo.addItem(name, key)
             index = combo.findData(current)
             if index >= 0:
                 combo.setCurrentIndex(index)
+            elif combo is self.recipient and (self.draft_recipient or self.composer.text()):
+                combo.setCurrentIndex(-1)
+            combo.blockSignals(False)
         current = self.pairs.currentData()
         self.pairs.clear()
         for a, b in self.snapshot["pairs"]:
@@ -563,7 +620,10 @@ class Window(QMainWindow):
             self.pairs.setCurrentIndex(index)
 
     def render_messages(self):
+        selected = {self.messages.item(i.row(), 0).data(Qt.ItemDataRole.UserRole)
+                    for i in self.messages.selectionModel().selectedRows()}
         self.messages.setRowCount(len(self.snapshot["messages"]))
+        self.messages.clearSelection()
         names = {s["id"]: s["name"] for s in self.snapshot["sessions"]}
         for row, message in enumerate(self.snapshot["messages"]):
             values = [time.strftime("%H:%M", time.localtime(message["created"])),
@@ -574,6 +634,130 @@ class Window(QMainWindow):
                 item.setToolTip(value + ("\n" + message["detail"] if column == 3 else ""))
                 item.setData(Qt.ItemDataRole.UserRole, message["id"])
                 self.messages.setItem(row, column, item)
+            if message["id"] in selected:
+                for column in range(self.messages.columnCount()):
+                    self.messages.item(row, column).setSelected(True)
+
+    def draft_changed(self, *args):
+        if not self.draft_loading:
+            self.draft_dirty = True
+            self.draft_recipient = self.recipient.currentData()
+            self.draft_timer.start()
+
+    def load_draft(self):
+        def received(value):
+            if not isinstance(value, dict):
+                return
+            if self.draft_dirty:
+                self.save_draft()
+                return
+            self.draft_loading = True
+            self.composer.setText(value.get("text", ""))
+            self.draft_recipient = value.get("recipient")
+            index = self.recipient.findData(self.draft_recipient)
+            if index >= 0:
+                self.recipient.setCurrentIndex(index)
+            elif value.get("text"):
+                self.recipient.setCurrentIndex(-1)
+            self.draft_loading = False
+        self.rpc("message_draft", callback=received)
+
+    def save_draft(self):
+        if not self.client or not self.draft_dirty or self.draft_saving:
+            return
+        self.draft_saving = True
+        value = {"text": self.composer.text(), "recipient": self.draft_recipient}
+        client = self.client
+        def done(result, error):
+            self.draft_saving = False
+            if not error and value == {"text": self.composer.text(), "recipient": self.draft_recipient}:
+                self.draft_dirty = False
+            elif error:
+                self.status.setText("Draft not saved; reconnect before closing")
+            else:
+                self.save_draft()
+        self.job(lambda: client.call("message_draft", value=value), done)
+
+    def terminal_appearance(self):
+        def received(value):
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Terminal appearance — new consoles")
+            form = QFormLayout(dialog)
+            font = QLineEdit(value["linux_font"])
+            font.setMinimumWidth(260)
+            font.setPlaceholderText("Inherit xterm defaults; enter monospace to customize")
+            size = QSpinBox()
+            size.setRange(6, 48)
+            size.setValue(value["linux_size"])
+            windows_profile = QLineEdit(value["windows_profile"])
+            mac_profile = QLineEdit(value["mac_profile"])
+            windows_profile.setPlaceholderText("Default Windows Terminal profile")
+            mac_profile.setPlaceholderText("Default Terminal profile")
+            for label, widget in (("Ubuntu/xterm font", font), ("Ubuntu font size (points)", size),
+                                  ("Windows Terminal profile name or GUID", windows_profile),
+                                  ("macOS Terminal profile name", mac_profile)):
+                form.addRow(label, widget)
+            note = QLabel("Applies to newly launched consoles. Windows/Mac font and size are configured in the selected terminal profile. Existing consoles keep their appearance.")
+            note.setWordWrap(True)
+            form.addRow(note)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            form.addRow(buttons)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                name = font.text().strip()
+                if not name and size.value() != value["linux_size"]:
+                    name = "monospace"
+                self.rpc("terminal_appearance", value={"linux_font": name, "linux_size": size.value(),
+                         "windows_profile": windows_profile.text(), "mac_profile": mac_profile.text()})
+        self.rpc("terminal_appearance", callback=received)
+
+    def backup_settings(self):
+        def received(value):
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Private VISOR state backups")
+            form = QFormLayout(dialog)
+            enabled = QCheckBox("Back up before broker upgrades")
+            enabled.setChecked(value["before_upgrade"])
+            keep = QSpinBox()
+            keep.setRange(1, 20)
+            keep.setValue(value["keep"])
+            form.addRow(enabled)
+            form.addRow("Backups to keep", keep)
+            note = QLabel("Backups include private messages and scoped credentials, including records later deleted from the live database. Keep them private. Provider history is not backed up. Automatic upgrade backups are opt-in.")
+            note.setWordWrap(True)
+            form.addRow(note)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            form.addRow(buttons)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.rpc("backup_options", value={"before_upgrade": enabled.isChecked(), "keep": keep.value()})
+        self.rpc("backup_options", callback=received)
+
+    def backup_state(self):
+        self.rpc("backup_state", callback=lambda path: QMessageBox.information(self, "State backup saved", str(path)))
+
+    def restore_instructions(self):
+        QMessageBox.information(self, "Restore a private state backup",
+            "Close VISOR, stop its broker and close managed console helpers before recovery. Run the console helper with --restore-state BACKUP --data-dir DATA_DIRECTORY. "
+            "Recovery saves a pre-restore snapshot, holds pending messages, disables agent communication and clears old credentials/window links. "
+            f"Provider history is unchanged. Current data directory: {self.root}")
+
+    def about(self):
+        from .broker import BUILD
+        from .diagnostics import doctor
+        def done(result, error):
+            import json
+            details = str(error) if error else json.dumps(result, indent=2)
+            box = QMessageBox(self)
+            box.setWindowTitle("About VISOR / local diagnostics")
+            box.setText(f"VISOR {__version__} · {BUILD}\nExecutable: {sys.executable}\nData: {self.root}")
+            box.setInformativeText("Diagnostics read local provider versions; no login or model requests. Details can contain private paths.")
+            box.setDetailedText(details)
+            box.exec()
+        client = self.client
+        self.job(lambda: {"application": doctor(), "broker": client.call("ping") if client else "disconnected"}, done)
 
     def message_menu(self, point):
         item = self.messages.itemAt(point)
@@ -757,7 +941,12 @@ class Window(QMainWindow):
 
     def stop_broker(self):
         if QMessageBox.question(self, "Stop broker", "Stop background delivery? Terminal sessions will continue. Operator sends need a broker restart.") == QMessageBox.StandardButton.Yes:
-            self.rpc("stop", callback=lambda result: self.status.setText("Broker stopped · Terminal sessions continue"))
+            self.broker_stopped = True
+            self.connection_generation += 1
+            def stopped(result):
+                self.client = None
+                self.status.setText("Broker stopped · Terminal sessions continue · Use Start / reconnect to resume")
+            self.rpc("stop", callback=stopped)
 
     def default_size(self):
         self.showNormal()
@@ -832,6 +1021,9 @@ class Window(QMainWindow):
             self.rpc("cancel_shutdown_tracking")
 
     def save_and_close(self):
+        if self.draft_saving:
+            QTimer.singleShot(100, self.save_and_close)
+            return
         value = {"geometry": [self.x(), self.y(), self.width(), self.height()],
                  "columns": [self.sessions.columnWidth(i) for i in range(self.sessions.columnCount())],
                  "sort_column": self.sessions.horizontalHeader().sortIndicatorSection(),
@@ -839,11 +1031,26 @@ class Window(QMainWindow):
                  "splitter": self.splitter.sizes(), "arrange": self.arrange_box.isVisible(),
                  "communication": self.comm_body.isVisible()}
         def done(result, error):
+            if error:
+                self.composer.setEnabled(True)
+                self.recipient.setEnabled(True)
+                QMessageBox.warning(self, "Unsaved VISOR state", "State or message draft could not be saved. Reconnect and retry closing, or clear the draft before leaving.")
+                return
             self.allow_close = True
             self.close()
         if self.client:
-            self.job(lambda: self.client.call("ui_state", value=value), done)
+            self.composer.setEnabled(False)
+            self.recipient.setEnabled(False)
+            client = self.client
+            draft = {"text": self.composer.text(), "recipient": self.draft_recipient}
+            def save():
+                client.call("message_draft", value=draft)
+                return client.call("ui_state", value=value)
+            self.job(save, done)
         else:
+            if self.draft_dirty and self.composer.text():
+                QMessageBox.warning(self, "Unsaved message draft", "Reconnect before closing to save this draft, or clear it before leaving.")
+                return
             done(None, None)
 
     def resize_edges(self, pos):
@@ -948,6 +1155,8 @@ def launch(root, smoke=False, discover=False):
         instance = SupervisorInstance(root)
         try:
             if not instance.start():
+                if instance.notice:
+                    QMessageBox.information(None, "VISOR already running", instance.notice)
                 return
         except (OSError, RuntimeError) as exc:
             QMessageBox.warning(None, "VISOR already running", str(exc))

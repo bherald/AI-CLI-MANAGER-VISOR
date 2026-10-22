@@ -1,6 +1,6 @@
 # Beta status and evidence
 
-Release candidate: **1.2.4**, build `2026-10-21-beta-3`.
+Release candidate: **1.3.0**, build `2026-10-22-beta-1`.
 
 Beta is an evaluation label. It does not mean complete platform acceptance, completed binary-distribution review, or production suitability.
 
@@ -24,3 +24,7 @@ The 1.2.1 Windows npm follow-up adds source/frozen-app checks against a disposab
 The 1.2.3 UI follow-up passed 177 local tests with six platform-specific skips, Ruff, lock validation, extracted Linux package checks, a 1.2.1-to-new-install helper upgrade, desktop launcher rendering, and live disposable X11 Cascade/Stacked geometry checks. New hosted tag builds are required before publishing platform archives; their exact outcome is recorded in the release notes. No interactive Mac acceptance is claimed.
 
 The 1.2.4 follow-up adds session-row double-click through the existing verified Focus path. The UI regression checks the clicked session after sorting and prevents accidental resume. Local Linux/X11 desktop testing confirmed the selected console becomes the foreground window. Native Windows/Mac jobs run this UI test offscreen; this does not claim interactive Windows or Mac desktop acceptance. Published release notes identify the exact-tag CI outcome.
+
+Candidate details and remaining platform acceptance are tracked in [ENHANCEMENTS.md](ENHANCEMENTS.md). At the 2026-10-22 local checkpoint, native Windows/Mac execution had not been performed; local cross-platform argument/protocol fixtures do not replace real desktops.
+
+Local candidate validation: 204 tests ran, 198 passed and six platform-specific checks skipped. Ruff and frozen lock checks passed. Real Linux/X11 disposable consoles verified 16-point xterm launch arguments, cwd/quoting, identity protection, double-click foreground activation, close and adjacent-window preservation. Version-aware and legacy activation were exercised through real local IPC. Native package/recovery acceptance is recorded in the private review receipt after building; Windows/Mac native execution remains pending.

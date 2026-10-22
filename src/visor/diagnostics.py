@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 
+from . import __version__
 from .process import run
 from .providers import ProviderUnavailable, provider_command
 
@@ -48,7 +49,8 @@ def doctor():
         warnings.append(f"Install {terminal} before launching managed terminals")
     if sys.platform == "darwin":
         warnings.append("Terminal control requires macOS Automation permission; this diagnostic does not request it")
-    return {"python": sys.version.split()[0], "platform": sys.platform,
+    return {"visor_version": __version__, "executable": sys.executable,
+            "python": sys.version.split()[0], "platform": sys.platform,
             "architecture": platform.machine(),
             "pyside6": importlib.util.find_spec("PySide6") is not None,
             "psutil": importlib.util.find_spec("psutil") is not None,

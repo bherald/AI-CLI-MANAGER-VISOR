@@ -21,13 +21,16 @@ class WindowNotFound(WindowUnavailable):
     pass
 
 
-def terminal_launch(command: list[str], cwd: str, token: str):
+def terminal_launch(command: list[str], cwd: str, token: str, appearance=None):
     """Only the intentional managed terminal is visible; no shell-interpolated user messages."""
+    from .appearance import validate
+    settings = validate(appearance or {})
     if sys.platform == "win32":
         wt = shutil.which("wt")
         if not wt:
             raise WindowUnavailable("Windows Terminal (wt.exe) is required")
-        subprocess.Popen([wt, "-w", "new", "new-tab", "--title", token,
+        profile = ["--profile", settings["windows_profile"]] if settings["windows_profile"] else []
+        subprocess.Popen([wt, "-w", "new", "new-tab", *profile, "--title", token,
                           "--suppressApplicationTitle", "-d", cwd, *command], **hidden_options())
     elif sys.platform == "darwin":
         # Terminal.app may already be running with an older desktop environment.
@@ -40,11 +43,21 @@ def terminal_launch(command: list[str], cwd: str, token: str):
         script = '''on run argv
 tell application "Terminal"
 set t to do script (item 1 of argv)
+if (count of argv) > 2 then
+set current settings of t to settings set (item 3 of argv)
+end if
 set custom title of t to item 2 of argv
 activate
 end tell
 end run'''
-        result = run(["osascript", "-e", script, shell_command, token])
+        # Check profile existence before launching any provider process.
+        if settings["mac_profile"]:
+            check = 'on run argv\ntell application "Terminal" to get name of settings set (item 1 of argv)\nend run'
+            checked = run(["osascript", "-e", check, settings["mac_profile"]])
+            if checked.returncode:
+                raise WindowUnavailable("Terminal profile is unavailable; check its name and Automation permission")
+        profile_arg = [settings["mac_profile"]] if settings["mac_profile"] else []
+        result = run(["osascript", "-e", script, shell_command, token, *profile_arg])
         if result.returncode:
             raise WindowUnavailable("Terminal automation failed; check macOS Automation permission")
     else:
@@ -53,7 +66,8 @@ end run'''
             raise WindowUnavailable("Install xterm for independent managed terminal windows")
         # Providers/shells emit OSC title changes. Keep the launch token stable so
         # ownership checks and window controls still find this exact terminal.
-        return subprocess.Popen([xterm, "-T", token, "-n", token,
+        font = ["-fa", settings["linux_font"], "-fs", str(settings["linux_size"])] if settings["linux_font"] else []
+        return subprocess.Popen([xterm, *font, "-T", token, "-n", token,
                           "-xrm", "XTerm.vt100.allowTitleOps: false", "-e", *command], cwd=cwd,
                          start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

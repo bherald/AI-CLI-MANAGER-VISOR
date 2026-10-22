@@ -2,7 +2,9 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. The supervisor provides discovery, exact-session launch/resume, Focus, arrangement, operator messages, approved agent pairs, and graceful wrap-up tracking.
 
-**Beta 1.2.4 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**Beta 1.3.0 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+
+Published packages are listed under [GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases). Exit an older supervisor before launching a new download; extract and keep the complete package directory together. The title and **About / diagnostics** identify the running version and executable.
 
 Source is MIT licensed. Provider accounts, provider software and their normal permissions remain yours to manage. VISOR does not bypass provider approvals.
 
@@ -23,7 +25,7 @@ Source is MIT licensed. Provider accounts, provider software and their normal pe
 | macOS | macOS 14+ for the locked Qt wheels; Terminal.app; native Python 3.12 for source builds | Hosted Apple silicon/Intel builds, AppleScript compilation, signature and extracted-package checks pass. Interactive desktop behavior remains unverified. |
 | Linux/Wayland | XWayland for xterm | Programmatic Focus, arrangement and managed-window closure are unavailable. |
 
-Windows and Linux beta downloads can be released independently after their checks and release approval. There is no verified macOS download yet. [macOS preparation and test plan](docs/MACOS.md).
+Published beta downloads include Windows AMD64, Linux x86_64 and experimental Mac arm64/x86_64 packages. Hosted Mac package checks pass; interactive desktop acceptance remains unverified. [macOS preparation and test plan](docs/MACOS.md).
 
 ## Run from source
 
@@ -62,7 +64,7 @@ Default state directories are `%LOCALAPPDATA%/Visor`, `~/Library/Application Sup
 
 ## Use the supervisor
 
-- **Refresh** reads Codex shared-server metadata and Claude history/live roster. Search, provider filtering and **Managed terminals only** restrict the visible rows. **Show all** clears all three filters; the count displays shown/total sessions.
+- **Refresh** reads Codex shared-server metadata and Claude history/live roster. Search, provider filtering and **VISOR terminals only** restrict the visible rows. **Show all** clears all three filters; the count displays shown/total sessions.
 - **New** selects a provider and project. **Resume** targets the saved session ID and project directory. Existing live ownership is checked to avoid duplicate workers. Registration by exact UUID is also available.
 - **Focus** verifies terminal/helper identity, then activates from the supervisor UI. A unique directory alone is never used to identify a terminal. For an existing external terminal, use **Link external terminal for Focus…** in the session menu, choose a supported native window and confirm the link. The link focuses the window; check its selected tab. It does not establish provider/process ownership, so it cannot grant arrangement or deletion privileges. Unlink it before resuming or deleting that session.
 - Drag edges/corners to resize the supervisor. Flexible tables, columns, splitter and composer fit the available space; minimum size, truncation and scrolling keep actions accessible. The middle title button restores the default size, minimize keeps work running, and X opens the exit choices.
@@ -154,3 +156,13 @@ In **Session communication**, select messages and choose **Delete selected messa
 Session columns can be sorted by clicking their headers; click again to reverse the order. **Last used** shows provider-reported activity or the last VISOR launch in local time; missing activity is shown as a dash. Refreshes and helper heartbeats do not change this date. **Stacked** tiles selected terminals top-to-bottom, while **Cascade** overlaps them with visible title bars. Edges and corners display standard resize cursors.
 
 Double-click a session row to bring its existing console to the foreground. This uses the same verified window association as **Focus**, including manually linked external consoles. Double-clicking does not resume a session or open another console; use **Resume** for a closed session.
+
+## Terminal appearance, drafts and recovery
+
+Use **Terminal appearance** in the supervisor menu. Ubuntu/xterm accepts a font name and size (6–48 points); leave the name blank to inherit xterm defaults. Changing only the size selects `monospace`. For Windows and Mac, enter an existing terminal profile name (Windows also accepts a profile GUID); configure its font and size in Windows Terminal Appearance or macOS Terminal Profiles → Text. Settings apply to new VISOR consoles. Existing consoles retain their current appearance; in xterm, Ctrl+right-click opens its font menu.
+
+Unsent operator drafts and their recipients are saved locally after a short delay and flushed on exit. Save failure is reported; a missing recipient must be selected again. Drafts contain private text in the same protected local state as messages. Broker disconnection triggers bounded reconnection; intentionally choosing **Stop broker** prevents automatic restart until you explicitly reconnect.
+
+**State backup settings** enables optional pre-upgrade snapshots and retention. **Back up VISOR state now** creates a consistent private SQLite backup. See [offline recovery instructions](docs/STATE_RECOVERY.md) before using `--restore-state`; restore holds pending messages, disables agent communication and invalidates old credentials/window links. It does not restore provider history. Backups can retain deleted message content.
+
+See the [1.3.0 enhancement checklist](docs/ENHANCEMENTS.md) and [native acceptance checklist](docs/NATIVE_ACCEPTANCE.md) for implementation status and platform limits.

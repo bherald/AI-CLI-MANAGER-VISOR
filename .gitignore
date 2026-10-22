@@ -25,6 +25,10 @@ VISOR-handoff.txt
 broker.json
 broker.lock
 supervisor.lock
+upgrade-backup.json
+backups/
+.snapshot-*
+.restore-*
 session-*.json
 launch-*.json
 claude-hook-*.json

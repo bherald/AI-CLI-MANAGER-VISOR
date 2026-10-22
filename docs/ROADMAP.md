@@ -24,3 +24,7 @@ The remaining native work is listed in [MACOS.md](MACOS.md). Host builds and App
 - Wayland Focus, arrangement and managed closure remain unavailable through the X11 adapter.
 
 Use disposable sessions for destructive tests. Never interpret a skip, simulated response or transport acceptance as a live completion result.
+
+## 1.3.0 review follow-through
+
+The accepted review/enhancement list, including terminal fonts and profiles on all three platforms, is tracked in [ENHANCEMENTS.md](ENHANCEMENTS.md). Message identity, upgrade visibility, reconnection, drafts, private backups/recovery, appearance controls and build-space checks are implemented in the candidate; platform acceptance limits remain explicit. Consult the versioned release notes for the exact published source revision and native-build results.

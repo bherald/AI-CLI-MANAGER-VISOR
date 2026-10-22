@@ -24,7 +24,7 @@ def main():
     args = parser.parse_args()
     suffix = ".zip" if os.name == "nt" else ".tar.gz"
     archive = args.archive or root / "dist" / (
-        f"visor-1.2.4-{platform.system().lower()}-{platform.machine().lower()}" + suffix)
+        f"visor-1.3.0-{platform.system().lower()}-{platform.machine().lower()}" + suffix)
     work = root / ".cache" / "native-package-acceptance" / uuid.uuid4().hex / "relocated package"
     extract_archive(archive.resolve(), work)
     if sys.platform == "darwin":
@@ -117,10 +117,10 @@ def main():
                 process.terminate()
                 process.wait(timeout=10)
     for script, target in (("verify_single_instance.py", gui), ("verify_claude_package.py", exe),
-                           ("verify_upgrade.py", exe)):
+                           ("verify_upgrade.py", exe), ("verify_state_recovery.py", exe)):
         subprocess.run([sys.executable, str(root / "scripts" / script), str(target)],
                        cwd=root, check=True, timeout=120)
-    print("PASS: checksum, extracted resources/modes, relocated UI, broker restart/queue, singleton, simulated Claude, upgrade")
+    print("PASS: checksum, extracted resources/modes, relocated UI, broker restart/queue, singleton, simulated Claude, upgrade, private state recovery")
     print(f"Isolated acceptance files: {work}")
 
 

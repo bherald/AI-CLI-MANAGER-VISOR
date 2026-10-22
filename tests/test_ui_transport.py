@@ -46,11 +46,107 @@ class UICase(unittest.TestCase):
         QTest.qWait(20)
 
     def tearDown(self):
+        self.window.draft_timer.stop()
         self.window.allow_close = True
         self.window.close()
         self.window.pool.waitForDone(1000)
         self.window.deleteLater()
         self.app.processEvents()
+
+    def test_message_selection_follows_identity_when_new_messages_arrive(self):
+        def message(key):
+            return {"id": key, "sender": "operator", "recipient": "fixture", "created": 0,
+                    "body": key, "state": "queued", "detail": ""}
+        self.window.snapshot["messages"] = [message("A"), message("B")]
+        self.window.render_messages()
+        self.window.messages.selectRow(1)
+        self.window.snapshot["messages"] = [message("NEW"), message("A"), message("B")]
+        self.window.render_messages()
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), patch.object(self.window, "rpc") as rpc:
+            self.window.delete_messages()
+            rpc.assert_called_once_with("delete_messages", messages=["B"])
+        self.window.snapshot["messages"] = [message("NEW"), message("A")]
+        self.window.render_messages()
+        self.assertEqual(self.window.messages.selectionModel().selectedRows(), [])
+
+    def test_disconnect_uses_backoff_and_intentional_stop_disables_reconnect(self):
+        self.window.client = object()
+        with patch.object(self.window, "job", side_effect=lambda function, callback: callback(None, "connection refused")):
+            self.window.poll()
+        self.assertIsNone(self.window.client)
+        with patch.object(self.window, "connect_broker") as connect:
+            self.window.poll()
+            connect.assert_not_called()
+            self.window.next_reconnect = 0
+            self.window.poll()
+            connect.assert_called_once_with(automatic=True)
+        self.window.broker_stopped = True
+        with patch.object(self.window, "connect_broker") as connect:
+            self.window.poll()
+            connect.assert_not_called()
+            self.window.refresh()
+            connect.assert_called_once_with()
+
+    def test_stop_broker_remains_stopped_after_next_poll(self):
+        self.window.client = object()
+        def rpc(action, callback=None, **params):
+            self.assertEqual(action, "stop")
+            callback(True)
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), patch.object(self.window, "rpc", side_effect=rpc):
+            self.window.stop_broker()
+        self.assertTrue(self.window.broker_stopped)
+        self.assertIsNone(self.window.client)
+        with patch.object(self.window, "connect_broker") as connect:
+            self.window.poll()
+            connect.assert_not_called()
+
+    def test_draft_writes_are_serialized_and_new_text_wins(self):
+        saved, pending = {}, []
+        class Client:
+            def call(self, action, **params):
+                self_action = action
+                assert self_action == "message_draft"
+                saved.update(params["value"])
+                return dict(saved)
+        self.window.client = Client()
+        self.window.recipient.addItem("Fixture", "codex:fixture")
+        with patch.object(self.window, "job", side_effect=lambda function, callback: pending.append((function, callback))):
+            self.window.composer.setText("old draft")
+            self.window.save_draft()
+            self.window.composer.setText("latest draft")
+            self.window.save_draft()
+            self.assertEqual(len(pending), 1)
+            function, callback = pending.pop(0)
+            callback(function(), None)
+            self.assertEqual(len(pending), 1)
+            function, callback = pending.pop(0)
+            callback(function(), None)
+        self.assertEqual(saved, {"text": "latest draft", "recipient": "codex:fixture"})
+        self.assertFalse(self.window.draft_dirty)
+
+    def test_saved_draft_restores_recipient_and_does_not_overwrite_user_typing(self):
+        self.window.recipient.addItem("A", "codex:a")
+        self.window.recipient.addItem("B", "codex:b")
+        self.window.draft_dirty = False
+        value = {"text": "restored draft", "recipient": "codex:b"}
+        with patch.object(self.window, "rpc", side_effect=lambda action, callback: callback(value)):
+            self.window.load_draft()
+        self.assertEqual(self.window.composer.text(), "restored draft")
+        self.assertEqual(self.window.recipient.currentData(), "codex:b")
+        self.window.composer.setText("new typing")
+        with patch.object(self.window, "rpc", side_effect=lambda action, callback: callback(value)), patch.object(self.window, "save_draft") as save:
+            self.window.load_draft()
+            save.assert_called_once()
+        self.assertEqual(self.window.composer.text(), "new typing")
+
+    def test_missing_draft_recipient_does_not_silently_select_another_session(self):
+        self.window.snapshot["sessions"] = [{"id": "codex:other", "name": "Other"}]
+        value = {"text": "Private draft for a removed session", "recipient": "codex:missing"}
+        with patch.object(self.window, "rpc", side_effect=lambda action, callback: callback(value)):
+            self.window.load_draft()
+        self.window.populate_combos()
+        self.assertIsNone(self.window.recipient.currentData())
+        self.assertEqual(self.window.composer.text(), value["text"])
 
     def test_delete_selected_messages_regardless_of_state(self):
         self.window.snapshot["messages"] = [

@@ -20,6 +20,8 @@ def main():
     mode.add_argument("--doctor", action="store_true")
     mode.add_argument("--maintain-storage", action="store_true",
                       help="Offline: clear old completed/failed message text and checkpoint storage")
+    mode.add_argument("--backup-state", action="store_true", help="Create a private SQLite state backup")
+    mode.add_argument("--restore-state", type=Path, help="Offline recovery from a VISOR state backup")
     parser.add_argument("--retention-days", type=int, default=30)
     parser.add_argument("--compact", action="store_true", help="Also compact storage during offline maintenance")
     mode.add_argument("--smoke-test", action="store_true", help="Render UI offscreen and exit; no provider calls")
@@ -54,6 +56,23 @@ def main():
         run_terminal(args.terminal)
         return
     root = data_dir(args.data_dir)
+    if args.backup_state:
+        from .state_backup import snapshot
+        print(snapshot(root))
+        return
+    if args.restore_state:
+        from contextlib import ExitStack
+
+        from .broker import BrokerLock
+        from .state_backup import restore
+        locks = []
+        with ExitStack() as stack:
+            for name in ("supervisor.lock", "broker.lock"):
+                lock = BrokerLock(root / name)
+                locks.append(lock)
+                stack.callback(lock.close)
+            print(restore(root, args.restore_state))
+        return
     if args.maintain_storage:
         from .broker import BrokerLock
         from .store import Store

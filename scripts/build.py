@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from visor.build_storage import check_space
 from visor.bundles import create_archive
 from visor.notices import copy_qt_notices, native_inventory
 
@@ -22,6 +23,7 @@ parser.add_argument("--output-dir", type=Path, default=root / "dist")
 output = parser.parse_args().output_dir.resolve()
 if not output.is_relative_to(root / "dist"):
     raise SystemExit("Build output must stay within the project dist directory")
+check_space(root)
 # Never ask PyInstaller to clean a directory that may contain a running installation.
 bundle_output = output / "native" / uuid.uuid4().hex
 bundle_output.mkdir(parents=True, exist_ok=False)
@@ -108,7 +110,7 @@ binary_root = app if sys.platform == "darwin" else destination
 (resources / "native-binaries.json").write_text(json.dumps({"binaries": native_inventory(binary_root),
     "hash_scope": "before code signing" if sys.platform == "darwin" else "packaged files",
     "review_status": "Inventory only; platform/native dependency redistribution review remains required"}, indent=2), encoding="utf-8")
-manifest = {"application": "VISOR", "version": "1.2.4", "release_status": "unsigned beta",
+manifest = {"application": "VISOR", "version": "1.3.0", "release_status": "unsigned beta",
             "os": platform.system(), "architecture": platform.machine(), "python": platform.python_version(),
             "dependencies": sorted(inventory, key=lambda item: item["name"].lower()),
             "upstream_qt_notices": qt_notices, "native_inventory": "native-binaries.json",
@@ -132,7 +134,7 @@ subprocess.run([str(smoke_exe), "--smoke-test", "--data-dir", str(smoke)],
                cwd=root, env={**env, "QT_QPA_PLATFORM": "offscreen"}, timeout=45, check=True)
 if not (smoke / "ui-smoke.png").is_file():
     raise SystemExit("Packaged UI did not render its smoke-test image")
-archive_name = f"visor-1.2.4-{platform.system().lower()}-{platform.machine().lower()}"
+archive_name = f"visor-1.3.0-{platform.system().lower()}-{platform.machine().lower()}"
 archive = create_archive(app if sys.platform == "darwin" else destination,
                          output / archive_name, windows=os.name == "nt")
 (output / "latest-build.json").write_text(json.dumps({"archive": archive.name,
