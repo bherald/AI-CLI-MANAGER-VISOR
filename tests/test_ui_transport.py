@@ -294,6 +294,28 @@ class UICase(unittest.TestCase):
         self.assertEqual(results[0][:2], (42, None))
         self.assertEqual(results[0][2], self.app.thread())
 
+    def test_close_discards_queued_worker_result_and_stops_timers(self):
+        results = []
+        self.window.job(lambda: 42, lambda result, error: results.append(result))
+        self.assertTrue(self.window.pool.waitForDone(2000))
+        self.window.timer.start(2500)
+        self.window.draft_timer.start()
+        self.window.allow_close = True
+        self.window.close()
+        QTest.qWait(30)
+        self.assertEqual(results, [])
+        self.assertFalse(self.window.timer.isActive())
+        self.assertFalse(self.window.draft_timer.isActive())
+        self.assertFalse(self.window.jobs)
+
+    def test_closed_window_does_not_start_another_poll(self):
+        self.window.client = object()
+        self.window.allow_close = True
+        self.window.close()
+        with patch.object(self.window, "job") as job:
+            self.window.poll()
+            job.assert_not_called()
+
     def test_double_click_focuses_clicked_session_after_sort_without_resuming(self):
         self.window.snapshot["sessions"] = [
             {"id": key, "native_id": key, "provider": "codex", "name": name, "cwd": "project",

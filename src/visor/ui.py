@@ -153,6 +153,7 @@ class Window(QMainWindow):
         self.poll_pending = False
         self.refreshing = False
         self.allow_close = False
+        self.closed = False
         self.shutdown_requested = False
         self.reconnecting = False
         self.broker_stopped = False
@@ -341,11 +342,14 @@ class Window(QMainWindow):
         QApplication.instance().installEventFilter(self)
 
     def job(self, function, callback):
+        if self.closed:
+            return
         # Keep the signal owner alive until the queued UI callback has run.
         # QRunnable auto-deletion can otherwise discard a fast worker's result.
         def finished(result, error):
             try:
-                callback(result, error)
+                if not self.closed:
+                    callback(result, error)
             finally:
                 self.jobs.discard(job)
         job = Job(function, finished)
@@ -398,7 +402,7 @@ class Window(QMainWindow):
         self.status.setText(f"Broker disconnected · reconnecting in {delay}s · {error}")
 
     def poll(self):
-        if self.broker_stopped:
+        if self.closed or self.broker_stopped:
             return
         if self.polling:
             self.poll_pending = True
@@ -982,6 +986,9 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         if self.allow_close:
+            self.closed = True
+            self.timer.stop()
+            self.draft_timer.stop()
             event.accept()
             return
         event.ignore()
