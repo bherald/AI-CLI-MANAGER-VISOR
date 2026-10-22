@@ -166,3 +166,7 @@ Unsent operator drafts and their recipients are saved locally after a short dela
 **State backup settings** enables optional pre-upgrade snapshots and retention. **Back up VISOR state now** creates a consistent private SQLite backup. See [offline recovery instructions](docs/STATE_RECOVERY.md) before using `--restore-state`; restore holds pending messages, disables agent communication and invalidates old credentials/window links. It does not restore provider history. Backups can retain deleted message content.
 
 See the [1.3.0 enhancement checklist](docs/ENHANCEMENTS.md) and [native acceptance checklist](docs/NATIVE_ACCEPTANCE.md) for implementation status and platform limits.
+
+## Tip this work
+
+If this work has helped you, you may leave an [optional one-time tip](https://github.com/sponsors/bherald?frequency=one-time). Tips help offset hardware, storage, electricity, hosting, and testing. A tip does not purchase support, consulting, access, priority, or any deliverable.
