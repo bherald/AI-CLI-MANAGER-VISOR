@@ -75,7 +75,7 @@ class BrokerProcessCase(unittest.TestCase):
     def test_preferences_draft_and_backup_survive_restart_and_are_operator_only(self):
         key = self.client.call("register", provider="claude", native_id=str(uuid.uuid4()), name="Fixture", cwd=str(self.root))
         draft = {"text": "Private unfinished draft", "recipient": key}
-        appearance = {"linux_font": "monospace", "linux_size": 16, "windows_profile": "Visor", "mac_profile": "Visor"}
+        appearance = {"linux_terminal": "konsole", "linux_font": "monospace", "linux_size": 16, "windows_profile": "Visor", "mac_profile": "Visor"}
         self.assertEqual(self.client.call("message_draft", value=draft), draft)
         self.assertEqual(self.client.call("terminal_appearance", value=appearance), appearance)
         self.client.call("backup_options", value={"before_upgrade": True, "keep": 2})

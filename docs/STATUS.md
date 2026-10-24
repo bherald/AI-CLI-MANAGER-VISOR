@@ -1,6 +1,6 @@
 # Beta status and evidence
 
-Release candidate: **1.3.0**, build `2026-10-22-beta-1`.
+Release: **1.3.1 beta 1**, build `2026-10-24-release-1.3.1`.
 
 Beta is an evaluation label. It does not mean complete platform acceptance, completed binary-distribution review, or production suitability.
 
@@ -28,3 +28,12 @@ The 1.2.4 follow-up adds session-row double-click through the existing verified 
 Candidate details and remaining platform acceptance are tracked in [ENHANCEMENTS.md](ENHANCEMENTS.md). At the 2026-10-22 local checkpoint, native Windows/Mac execution had not been performed; local cross-platform argument/protocol fixtures do not replace real desktops.
 
 Local candidate validation: 204 tests ran, 198 passed and six platform-specific checks skipped. Ruff and frozen lock checks passed. Real Linux/X11 disposable consoles verified 16-point xterm launch arguments, cwd/quoting, identity protection, double-click foreground activation, close and adjacent-window preservation. Version-aware and legacy activation were exercised through real local IPC. Native package/recovery acceptance is recorded in the private review receipt after building; Windows/Mac native execution remains pending.
+
+
+The 1.3.1 release adds Konsole with the normal desktop profile and xterm fallback,
+three distinct compact panels, metadata-based saved descriptions, default-No
+keyboard deletion and connection/message cleanup. Local native Konsole+xterm and
+frozen synthetic-provider checks passed; Linux packaged startup/upgrade/recovery
+passed. README now distinguishes the coordination history from provider transcripts
+and diagnostic/error output. Exact hosted tag-job outcomes are recorded in the
+published 1.3.1 beta 1 release notes; interactive Mac limits remain unchanged.

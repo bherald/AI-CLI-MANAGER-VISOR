@@ -21,6 +21,32 @@ class WindowNotFound(WindowUnavailable):
     pass
 
 
+def linux_terminal(preference="auto"):
+    """Supported independent terminals; auto inherits Konsole's desktop profile."""
+    if preference not in ("auto", "konsole", "xterm"):
+        raise WindowUnavailable("Unsupported Linux terminal")
+    for name in (("konsole", "xterm") if preference == "auto" else (preference,)):
+        executable = shutil.which(name)
+        if executable:
+            return name, executable
+    raise WindowUnavailable("Install Konsole or xterm, or choose an installed Linux terminal in Terminal appearance")
+
+
+def _desktop_terminal_environment():
+    # PyInstaller prepends its own Qt libraries/plugins. Native Konsole must use
+    # the system Qt installation, while retaining DISPLAY, PATH and provider env.
+    environment = os.environ.copy()
+    if getattr(sys, "frozen", False):
+        original = environment.pop("LD_LIBRARY_PATH_ORIG", None)
+        if original is None:
+            environment.pop("LD_LIBRARY_PATH", None)
+        else:
+            environment["LD_LIBRARY_PATH"] = original
+        for key in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH"):
+            environment.pop(key, None)
+    return environment
+
+
 def terminal_launch(command: list[str], cwd: str, token: str, appearance=None):
     """Only the intentional managed terminal is visible; no shell-interpolated user messages."""
     from .appearance import validate
@@ -61,13 +87,19 @@ end run'''
         if result.returncode:
             raise WindowUnavailable("Terminal automation failed; check macOS Automation permission")
     else:
-        xterm = shutil.which("xterm")
-        if not xterm:
-            raise WindowUnavailable("Install xterm for independent managed terminal windows")
-        # Providers/shells emit OSC title changes. Keep the launch token stable so
-        # ownership checks and window controls still find this exact terminal.
+        name, executable = linux_terminal(settings["linux_terminal"])
+        if name == "konsole":
+            # Separate process/window, default font/colors, no existing tabs reused.
+            # Literal local/remote formats omit %w, so OSC title changes cannot
+            # replace the ownership token. Konsole adds its standard app suffix.
+            return subprocess.Popen([executable, "--separate", "--workdir", cwd,
+                                     "-p", f"LocalTabTitleFormat={token}",
+                                     "-p", f"RemoteTabTitleFormat={token}",
+                                     "-e", *command], cwd=cwd, env=_desktop_terminal_environment(),
+                                    start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Providers/shells emit OSC title changes. Keep the launch token stable.
         font = ["-fa", settings["linux_font"], "-fs", str(settings["linux_size"])] if settings["linux_font"] else []
-        return subprocess.Popen([xterm, *font, "-T", token, "-n", token,
+        return subprocess.Popen([executable, *font, "-T", token, "-n", token,
                           "-xrm", "XTerm.vt100.allowTitleOps: false", "-e", *command], cwd=cwd,
                          start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -165,7 +197,7 @@ class Linux:
         matches = []
         for line in result.stdout.splitlines():
             columns = line.split(None, 7)
-            if len(columns) == 8 and columns[7] == token:
+            if len(columns) == 8 and columns[7] in (token, token + " — Konsole"):
                 matches.append(columns)
         if not matches:
             raise WindowNotFound("Managed terminal window no longer exists")

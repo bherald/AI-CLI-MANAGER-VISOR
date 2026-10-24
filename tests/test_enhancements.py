@@ -23,7 +23,7 @@ class AppearanceCase(unittest.TestCase):
     def test_xterm_font_arguments_preserve_command_and_title_guards(self):
         command = ["helper", "literal argument"]
         with patch("visor.platforms.sys.platform", "linux"), patch("visor.platforms.shutil.which", return_value="xterm"), patch("visor.platforms.subprocess.Popen") as launch:
-            terminal_launch(command, "/project", "unique", {"linux_font": "DejaVu Sans Mono", "linux_size": 16})
+            terminal_launch(command, "/project", "unique", {"linux_terminal": "xterm", "linux_font": "DejaVu Sans Mono", "linux_size": 16})
         args = launch.call_args.args[0]
         self.assertEqual(args[1:5], ["-fa", "DejaVu Sans Mono", "-fs", "16"])
         self.assertEqual(args[args.index("-e") + 1:], command)

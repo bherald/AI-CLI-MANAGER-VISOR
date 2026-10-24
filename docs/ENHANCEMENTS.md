@@ -1,6 +1,6 @@
-# VISOR 1.3.0 enhancement checklist
+# VISOR 1.3.1 enhancement checklist
 
-This checklist records the 1.3.0 beta candidate's local validation on 2026-10-22. Hosted Windows/Mac CI and interactive platform acceptance are not established by local Linux tests.
+This checklist records the 1.3.1 beta candidate's local validation on 2026-10-22. Hosted Windows/Mac CI and interactive platform acceptance are not established by local Linux tests.
 
 | Review item | Candidate implementation | Remaining acceptance |
 | --- | --- | --- |
@@ -17,3 +17,17 @@ This checklist records the 1.3.0 beta candidate's local validation on 2026-10-22
 Terminal appearance changes apply to new console windows. Windows/Mac profile fonts are configured in the terminal application's own profile settings. Existing sessions and console settings are left in place.
 
 Keep native Wayland controls, live Claude model/channel acceptance, detached-work detection limits and dependency-distribution review on the broader [roadmap](ROADMAP.md).
+
+## Usability follow-ups
+
+Use Microsoft's Fluent 2 accessibility guidance for both desktop and future web
+interfaces, with native platform conventions for keyboard focus and controls.
+These are design references, not a claim of conformance or a web-version plan:
+https://fluent2.microsoft.design/accessibility
+https://learn.microsoft.com/en-us/windows/apps/design/input/keyboard-interactions
+
+Future candidates: pinned sessions/project groups; a session details pane;
+archive/hide with undo; adjustable supervisor text size/density; keyboard action
+palette/help; Open project folder/Copy path; unread-message indicators; clearer
+terminal-versus-provider connection states. These remain proposals, separate
+from the current compact rows, saved descriptions and confirmed cleanup controls.

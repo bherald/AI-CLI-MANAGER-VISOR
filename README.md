@@ -1,8 +1,8 @@
 # VISOR — AI CLI session supervisor
 
-VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. The supervisor provides discovery, exact-session launch/resume, Focus, arrangement, operator messages, approved agent pairs, and graceful wrap-up tracking.
+VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. Use the supervisor to find and resume exact sessions, bring terminals forward, connect selected agents, and follow their coordination messages through delivery, acknowledgment and completion. Session communication and its local message history are a core part of VISOR, alongside terminal management and graceful wrap-up.
 
-**Beta 1.3.0 — evaluation release candidate.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**1.3.1 beta 1 — evaluation release.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
 
 Published packages are listed under [GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases). Exit an older supervisor before launching a new download; extract and keep the complete package directory together. The title and **About / diagnostics** identify the running version and executable.
 
@@ -21,9 +21,9 @@ Source is MIT licensed. Provider accounts, provider software and their normal pe
 | Platform | Requirements | Verified evidence and limits |
 | --- | --- | --- |
 | Windows | Windows Terminal (`wt.exe`); native provider or standard npm-installed Codex on PATH | Earlier native build/package and live Codex delivery checks; operator-confirmed Focus. Clean-machine/provider acceptance remains incomplete. Unsigned. |
-| Linux/X11 | `xterm`, `wmctrl`, Qt runtime libraries | Ubuntu/KWin native packaging and disposable-window checks recorded. Full provider, reboot, accessibility and multi-monitor acceptance remain open. |
+| Linux/X11 | Konsole (preferred) or `xterm`; `wmctrl`; Qt runtime libraries | Ubuntu/KWin native packaging and disposable-window checks recorded. Full provider, reboot, accessibility and multi-monitor acceptance remain open. |
 | macOS | macOS 14+ for the locked Qt wheels; Terminal.app; native Python 3.12 for source builds | Hosted Apple silicon/Intel builds, AppleScript compilation, signature and extracted-package checks pass. Interactive desktop behavior remains unverified. |
-| Linux/Wayland | XWayland for xterm | Programmatic Focus, arrangement and managed-window closure are unavailable. |
+| Linux/Wayland | Konsole, or xterm through XWayland | Programmatic Focus, arrangement and managed-window closure are unavailable. |
 
 Published beta downloads include Windows AMD64, Linux x86_64 and experimental Mac arm64/x86_64 packages. Hosted Mac package checks pass; interactive desktop acceptance remains unverified. [macOS preparation and test plan](docs/MACOS.md).
 
@@ -42,7 +42,7 @@ py -3.12 scripts/bootstrap.py
 Ubuntu/X11:
 
 ```sh
-sudo apt-get install xterm wmctrl libegl1 libopengl0 libxcb-cursor0
+sudo apt-get install konsole wmctrl libegl1 libopengl0 libxcb-cursor0
 python3.12 scripts/bootstrap.py
 .venv/bin/python scripts/run.py --doctor
 .venv/bin/python scripts/run.py
@@ -64,6 +64,17 @@ Default state directories are `%LOCALAPPDATA%/Visor`, `~/Library/Application Sup
 
 ## Use the supervisor
 
+The top **Sessions** panel fits its rows. **Session communication** below has
+separate **Connected sessions** and **Messages** panels. Compact rows, sortable
+columns and description search help with longer saved-session lists. Descriptions
+come from existing Codex previews or Claude transcript metadata; custom names are
+kept and no model request is made to summarize your history.
+
+Select session rows and press **Delete** for a **Yes/No** permanent-delete
+confirmation, defaulting to **No**. This uses the same exact-provider and managed
+terminal checks as the row menu. Deleting a session also removes its provider
+conversation; deleting a coordination message does not.
+
 - **Refresh** reads Codex shared-server metadata and Claude history/live roster. Search, provider filtering and **VISOR terminals only** restrict the visible rows. **Show all** clears all three filters; the count displays shown/total sessions.
 - **New** selects a provider and project. **Resume** targets the saved session ID and project directory. Existing live ownership is checked to avoid duplicate workers. Registration by exact UUID is also available.
 - **Focus** verifies terminal/helper identity, then activates from the supervisor UI. A unique directory alone is never used to identify a terminal. For an existing external terminal, use **Link external terminal for Focus…** in the session menu, choose a supported native window and confirm the link. The link focuses the window; check its selected tab. It does not establish provider/process ownership, so it cannot grant arrangement or deletion privileges. Unlink it before resuming or deleting that session.
@@ -75,11 +86,51 @@ Default state directories are `%LOCALAPPDATA%/Visor`, `~/Library/Application Sup
 
 Codex deletion uses documented `thread/delete`, including spawned descendant conversations; active and archived descendants are checked and their associated managed terminals closed first. Claude deletion removes the exact UUID's local main/subagent transcripts and session artifact directories under its configuration root, with path containment checks. It does not use project-wide `claude purge` or claim to erase provider cloud retention, shared logs or backups. Closure must be verified and known helper/observed descendant process identities must have stopped before history deletion. Process observations cannot account for every detached or scheduled job. Windows terminal closure and an isolated Codex deletion were tested previously; live macOS and provider-history deletion acceptance on Linux remain pending. macOS refuses deletion of windows containing additional tabs. Wayland window closure is unavailable through this adapter.
 
-## Messaging and graceful wrap-up
+## Session communication
+
+Use this to coordinate agents working in different conversations or projects,
+and to keep a local record of who was asked to do what. A practical workflow:
+
+1. Select the two sessions under **Connected sessions** and choose **Add pair**.
+2. Enable **Participates in agent communication** on both session menus and the
+   master **Agent communication** toggle when you want direct agent messages.
+3. Send an operator message or let the connected agents exchange bounded updates.
+4. Follow its **State** and right-click **View message** for the complete text and
+   delivery detail. A transport receipt is separate from the agent's response.
+5. Review finished work, then clean up messages or remove connections you no
+   longer need. A connection is a permission to communicate, not a shared approval
+   to edit, deploy, publish or stop another session's work.
+
+**Manage connections…** lets you select several pairs and confirm their removal.
+Removing a pair retains the sessions and messages and disables future direct
+agent communication on that pair. Previously delivered messages cannot be recalled.
+
+### Message states and cleanup
+
+| State | What it means |
+| --- | --- |
+| `queued` | Waiting to be sent. |
+| `held` | Paused by communication policy or loop protection; inspect the reason before releasing. |
+| `sending` | A delivery attempt is in progress. |
+| `delivered` | Accepted by the receiving queue/transport; reading is not confirmed. |
+| `acknowledged` | The receiving agent explicitly confirmed reading. |
+| `completed` | The agent marked this message/request handled; independent work and background-process verification are separate. |
+| `delivery_unknown` | It may have arrived, but acceptance was not confirmed. Inspect the recipient before sending another copy. |
+| `failed` | Delivery was recorded as failed; inspect the detail. |
+
+Filter **All messages**, **Needs attention**, or **Finished**. **Clean up finished…**
+asks before deleting the loaded completed/failed records; pending and uncertain
+messages remain. Select specific message rows and press **Delete**, use **Delete
+selected messages…**, or right-click **Delete message…** to remove them in any
+state. Confirmations default to **No**. Deleting queued text cancels its delivery;
+already sent text cannot be retracted. VISOR retains request-ID tombstones to
+prevent accidental replay. Cleanup affects VISOR history, not provider transcripts.
+
+### Delivery permissions and wrap-up
 
 Operator messages remain available independently of the agent communication toggle. Agent messages require an explicit direct pair, participation by both sessions, and the master agent communication toggle. One session can have several pairs; connections are not transitive. Credentials identify the sender and cannot call operator controls.
 
-The queue distinguishes queued, held, sending, delivered, acknowledged, completed, failed and delivery-unknown states. Transport acceptance does not prove reading or completion. Disabling agent communication holds queued agent messages. Re-enabling does not automatically release held messages. Uncertain attempts are not blindly retried.
+Disabling agent communication holds queued agent messages. Re-enabling does not automatically release held messages. Uncertain attempts are not blindly retried.
 
 Agent traffic is also held after three identical messages in the same direction within five minutes,
 or 24 messages across a pair within five minutes. The existing per-sender rate limit still applies.
@@ -151,21 +202,48 @@ Related implementations reviewed: [wmux](https://github.com/amirlehmam/wmux) for
 
 Other primary references: [Codex CLI](https://developers.openai.com/codex/cli/reference/), [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Claude channels and availability](https://code.claude.com/docs/en/channels), [Qt for Python](https://doc.qt.io/qtforpython-6/), and [PyInstaller native builds](https://pyinstaller.org/en/stable/operating-mode.html).
 
-In **Session communication**, select messages and choose **Delete selected messages…**, or right-click a message and choose **Delete message…**. This works in every state, including `delivery_unknown`. Pending delivery is cancelled; text already sent to a session cannot be retracted.
-
 Session columns can be sorted by clicking their headers; click again to reverse the order. **Last used** shows provider-reported activity or the last VISOR launch in local time; missing activity is shown as a dash. Refreshes and helper heartbeats do not change this date. **Stacked** tiles selected terminals top-to-bottom, while **Cascade** overlaps them with visible title bars. Edges and corners display standard resize cursors.
 
 Double-click a session row to bring its existing console to the foreground. This uses the same verified window association as **Focus**, including manually linked external consoles. Double-clicking does not resume a session or open another console; use **Resume** for a closed session.
 
+## Communication history, logs and diagnostics
+
+The Messages panel is VISOR's local coordination history: time, sender, recipient,
+full message, state and delivery detail. It survives broker/supervisor restarts.
+Use it to follow a handoff or investigate a hold; it is not proof that the agent's
+code, deployment or background work succeeded.
+
+| Record | What it contains |
+| --- | --- |
+| VISOR message history | Coordination messages, delivery states and receipt details in the local VISOR data directory. |
+| Provider terminal and transcripts | The actual agent conversation and tool output, retained by Codex or Claude under their normal settings. VISOR does not centrally record every terminal's scrollback. |
+| About / diagnostics | The running VISOR executable/build, provider executable/version and desktop prerequisites. No login or model request is made. |
+| Console startup/error output | Errors emitted by `visor-console`; capture stderr when investigating startup problems. Debug logging is not a persistent all-session log service. |
+
+From the extracted package directory, capture a diagnostic report without opening
+a session:
+
+```sh
+./visor-console --doctor > visor-diagnostics.json
+```
+
+On Windows, use `.\visor-console.exe --doctor > visor-diagnostics.json` in
+PowerShell. For startup/error output on Linux/macOS, run
+`./visor-console 2> visor-startup.log` (Mac's console helper is inside the app's
+`Contents/Helpers/visor-console.app/Contents/MacOS/` directory). Keep the complete
+package together. These files can contain private paths or error context: review
+and redact them before sharing. Local messages/transcripts/backups remain private
+and unencrypted at rest; clearing history is not secure erasure.
+
 ## Terminal appearance, drafts and recovery
 
-Use **Terminal appearance** in the supervisor menu. Ubuntu/xterm accepts a font name and size (6–48 points); leave the name blank to inherit xterm defaults. Changing only the size selects `monospace`. For Windows and Mac, enter an existing terminal profile name (Windows also accepts a profile GUID); configure its font and size in Windows Terminal Appearance or macOS Terminal Profiles → Text. Settings apply to new VISOR consoles. Existing consoles retain their current appearance; in xterm, Ctrl+right-click opens its font menu.
+Use **Terminal appearance** in the supervisor menu. Linux automatically uses Konsole when installed and inherits your normal Konsole profile, including font and colors. You can explicitly select Konsole or xterm. Konsole uses a separate window for each session; configure its text in Konsole Settings. The xterm fallback accepts a font name and size (6–48 points); leave the name blank to inherit xterm defaults. Changing only the size selects `monospace`. For Windows and Mac, enter an existing terminal profile name (Windows also accepts a profile GUID); configure its font and size in Windows Terminal Appearance or macOS Terminal Profiles → Text. Settings apply to new VISOR consoles. Existing consoles retain their current appearance; in xterm, Ctrl+right-click opens its font menu.
 
 Unsent operator drafts and their recipients are saved locally after a short delay and flushed on exit. Save failure is reported; a missing recipient must be selected again. Drafts contain private text in the same protected local state as messages. Broker disconnection triggers bounded reconnection; intentionally choosing **Stop broker** prevents automatic restart until you explicitly reconnect.
 
 **State backup settings** enables optional pre-upgrade snapshots and retention. **Back up VISOR state now** creates a consistent private SQLite backup. See [offline recovery instructions](docs/STATE_RECOVERY.md) before using `--restore-state`; restore holds pending messages, disables agent communication and invalidates old credentials/window links. It does not restore provider history. Backups can retain deleted message content.
 
-See the [1.3.0 enhancement checklist](docs/ENHANCEMENTS.md) and [native acceptance checklist](docs/NATIVE_ACCEPTANCE.md) for implementation status and platform limits.
+See the [enhancement checklist](docs/ENHANCEMENTS.md) and [native acceptance checklist](docs/NATIVE_ACCEPTANCE.md) for implementation status and platform limits.
 
 ## Tip this work
 

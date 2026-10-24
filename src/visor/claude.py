@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .paths import own_command, write_private
 from .process import run
+from .session_text import label, summary
 
 HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
                "PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd")
@@ -107,7 +108,7 @@ def transcript_metadata(path, projects):
                 stream.seek(max(len(head), stat.st_size - 256 * 1024))
                 stream.readline()  # drop a partial record
                 tail = stream.read(256 * 1024)
-        cwd, title = None, None
+        cwd, title, description = None, None, ""
         for line in (head + b"\n" + tail).splitlines():
             if len(line) > 65536:
                 continue
@@ -117,6 +118,12 @@ def transcript_metadata(path, projects):
                 continue
             if not isinstance(record, dict) or record.get("isSidechain"):
                 continue
+            if not description and record.get("type") == "user" and not record.get("isMeta"):
+                message = record.get("message", {})
+                content = message.get("content", "") if isinstance(message, dict) else ""
+                if isinstance(content, list):
+                    content = " ".join(part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str))
+                description = summary(content)
             candidate = record.get("cwd")
             if isinstance(candidate, str) and Path(candidate).is_absolute():
                 cwd = candidate
@@ -125,7 +132,7 @@ def transcript_metadata(path, projects):
             elif not title and record.get("type") == "summary" and isinstance(record.get("summary"), str):
                 title = record["summary"]
         result = None if not cwd else {"provider": "claude", "native_id": sid,
-            "name": (title or f"{Path(cwd).name} · {sid[:8]}").replace("\n", " ")[:160], "cwd": cwd,
+            "name": label(title, description, cwd, sid), "description": description, "cwd": cwd,
             "status": "unknown", "latest": "Saved Claude session; live status unavailable", "updated": stat.st_mtime}
         _transcripts[str(path)] = (signature, result)
         return result
@@ -158,6 +165,8 @@ def discover(exe=None, config_dir=None):
             else:
                 for item in parse_roster(json.loads(output.stdout)):
                     saved = sessions.get(item["native_id"], {})
+                    if saved.get("description"):
+                        item["description"] = saved["description"]
                     if "updated" in saved:
                         item["updated"] = saved["updated"]
                     sessions[item["native_id"]] = item

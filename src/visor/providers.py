@@ -17,6 +17,7 @@ from websockets.protocol import OPEN
 from websockets.uri import parse_uri
 
 from .process import hidden_options, run
+from .session_text import label, summary
 
 
 class ProviderUnavailable(RuntimeError):
@@ -94,7 +95,7 @@ class CodexRPC:
         try:
             if not self.ready.wait(10) or self.protocol.state != OPEN:
                 raise ProviderUnavailable(self.connection_error or "Codex control socket handshake timed out")
-            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.3.0"},
+            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.3.1"},
                                      "capabilities": {"experimentalApi": experimental}})
             self.send({"method": "initialized", "params": {}})
         except Exception:
@@ -191,7 +192,8 @@ def discover_codex():
             result = rpc.call("thread/list", {"cursor": cursor, "limit": 100, "sortKey": "updated_at"})
             for item in result.get("data", []):
                 sessions.append({"provider": "codex", "native_id": item["id"],
-                                 "name": item.get("name") or item["id"][:12],
+                                 "name": label(item.get("name"), item.get("preview"), item.get("cwd", ""), item["id"]),
+                                 "description": summary(item.get("preview")),
                                  "cwd": item.get("cwd", ""),
                                  "status": codex_status(item.get("status")),
                                  "latest": "Runtime status from Codex daemon",

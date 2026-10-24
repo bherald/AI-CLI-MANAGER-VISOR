@@ -1,3 +1,35 @@
+# 1.3.1 beta 1 — communication and desktop usability
+
+- Make session communication a documented core workflow: explicit pairs,
+  participation, operator messaging, delivery/read/completion states and local history.
+- Separate the supervisor into Sessions, Connected sessions and Messages; fit
+  session rows to content and remove the unused middle gap.
+- Prefer Konsole on Linux with the normal desktop profile/font/colors; keep
+  xterm fallback and an explicit terminal selector. Preserve quoted cwd/arguments,
+  stable titles, focus/close identity checks and separate terminal windows.
+- Isolate native Konsole from the frozen application's Qt library/plugin paths.
+- Tighten both grids to 21-pixel rows and retain sortable columns/identity selection.
+- Show saved-session descriptions from existing provider metadata without model
+  calls; improve generic UUID labels while preserving custom names.
+- Support Delete on selected session/message rows, with Yes/No confirmation
+  defaulting to No and existing provider/terminal deletion safeguards.
+- Filter message history by All/Needs attention/Finished; confirm cleanup of loaded
+  completed/failed records and bulk removal of selected connections. Uncertain
+  delivery is not silently retried; message cleanup is distinct from transcript deletion.
+- Explain coordination history, provider transcripts, diagnostics and startup
+  logging, including their privacy and verification limits.
+
+Validation: the versioned source suite ran 216 tests (210 passed, six skipped).
+The focused layout suite ran 32 UI tests (31 passed, one skipped). Lint and frozen
+lock validation passed. Real disposable Linux/X11 Konsole and xterm checks, the packaged
+synthetic-provider workflow, relocated startup, broker restart, singleton, upgrade
+and state recovery passed. The exact 1.3.1 tag CI provides this release's native
+Windows, Linux and Mac package evidence; published release notes link its results.
+Interactive macOS desktop acceptance remains unverified; Mac packages remain
+experimental, ad-hoc signed and not notarized. Windows/Linux packages are unsigned.
+No stable/production-suitability or complete accessibility/redistribution review
+is implied by this beta.
+
 # 1.3.0 — beta candidate
 
 Local pre-release validation is recorded here; exact native-build outcomes belong in the versioned release's published notes.

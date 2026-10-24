@@ -16,8 +16,14 @@ from .providers import ProviderUnavailable, provider_command
 def doctor():
     wayland = sys.platform.startswith("linux") and bool(
         os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE") == "wayland")
+    from .platforms import WindowUnavailable, linux_terminal
     terminal = "wt" if sys.platform == "win32" else "osascript" if sys.platform == "darwin" else "xterm"
     warnings = []
+    if sys.platform.startswith("linux"):
+        try:
+            terminal, _ = linux_terminal()
+        except WindowUnavailable:
+            warnings.append("Install Konsole or xterm before launching managed terminals")
     providers = {}
     for provider in ("codex", "claude"):
         exe = shutil.which(provider)

@@ -38,7 +38,7 @@ from .providers import (
 from .store import PolicyError, Store
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-22-beta-1"
+BUILD = "2026-10-24-release-1.3.1"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -118,7 +118,7 @@ class Broker:
             self.store.set_external_focus(params["session"], None)
             return True
         if action == "ping":
-            return {"running": True, "version": "1.3.0", "build": BUILD}
+            return {"running": True, "version": "1.3.1", "build": BUILD}
         if action == "terminal_appearance":
             from .appearance import validate
             if "value" in params:

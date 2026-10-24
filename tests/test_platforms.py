@@ -74,7 +74,7 @@ class PlatformsCase(unittest.TestCase):
     def test_linux_launch_preserves_identity_and_argument_boundaries(self, _, popen):
         command = ["/tmp/visor helper", "--terminal", "/tmp/a b'c/ticket.json"]
         with patch("visor.platforms.sys.platform", "linux"):
-            terminal_launch(command, "/tmp/a b'c", "unique")
+            terminal_launch(command, "/tmp/a b'c", "unique", {"linux_terminal": "xterm"})
         args = popen.call_args.args[0]
         self.assertEqual(args[args.index("-e") + 1:], command)
         self.assertEqual(args[args.index("-xrm") + 1], "XTerm.vt100.allowTitleOps: false")

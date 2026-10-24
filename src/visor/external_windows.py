@@ -52,7 +52,7 @@ def _linux_candidates():
             identity = process_identity(int(parts[2]))
         except (OSError, ValueError):
             continue
-        if Path(identity["image"]).name not in ("xterm", "uxterm"):
+        if Path(identity["image"]).name not in ("xterm", "uxterm", "konsole"):
             continue
         candidates.append({"title": parts[4], "identity": {"platform": "linux", "handle": parts[0], **identity}})
     return candidates

@@ -33,9 +33,10 @@ def wait_for(predicate, message, timeout=10):
 def main():
     if not sys.platform.startswith("linux") or not os.environ.get("DISPLAY"):
         raise SystemExit("Run this visible acceptance check on a Linux X11 desktop")
-    missing = [name for name in ("xterm", "wmctrl", "xprop") if not shutil.which(name)]
+    missing = [name for name in ("wmctrl", "xprop") if not shutil.which(name)]
     if missing:
         raise SystemExit("Install acceptance prerequisites: " + ", ".join(missing))
+    preference = sys.argv[1] if len(sys.argv) > 1 else "auto"
     adapter = Linux()
     adapter._check()  # Wayland must fail explicitly, even with XWayland available.
     work = root / ".cache" / "linux-window-acceptance" / uuid.uuid4().hex / "project space's"
@@ -55,7 +56,8 @@ time.sleep(120)
             token = "VISOR-X11-acceptance-" + uuid.uuid4().hex
             record = work / f"worker-{index}.json"
             processes.append(terminal_launch(
-                [sys.executable, str(fixture), str(record), argument], str(work), token))
+                [sys.executable, str(fixture), str(record), argument], str(work), token,
+                {"linux_terminal": preference}))
 
             def ready(record=record, token=token):
                 try:
@@ -110,14 +112,14 @@ time.sleep(120)
         result = {"platform": "Linux/X11", "passed": ["launch/quoted cwd and arguments",
                   "title override protection", "identity mismatch rejection", "placement/geometry",
                   "exact focus", "external focus/stale rejection", "close/worker exit",
-                  "adjacent window and worker preservation"], "provider_calls": False}
+                  "adjacent window and worker preservation"], "provider_calls": False, "terminal_preference": preference}
         (work / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(result, indent=2))
         print(f"Acceptance evidence: {work}")
     finally:
         for process in processes:
             if process.poll() is None:
-                process.terminate()  # Only the exact xterm processes created above.
+                process.terminate()  # Only the exact terminal processes created above.
             process.wait(timeout=5)
 
 

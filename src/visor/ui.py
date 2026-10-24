@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizeGrip,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStyle,
@@ -49,13 +51,15 @@ QPushButton:hover { border-color: #00cdd2; background: #233b47; }
 QPushButton:disabled { color: #70818d; border-color: #2a3c46; }
 QPushButton#primary { background: #00bfc7; color: #07181d; font-weight: 600; }
 QPushButton#section { text-align: left; border: 0; border-bottom: 1px solid #354b59; min-height: 16px; padding: 2px 4px; }
-QTableWidget QPushButton { min-height: 16px; padding: 1px 4px; font-size: 12px; }
+QTableWidget QPushButton { min-height: 15px; padding: 0px 4px; font-size: 12px; }
 QTableWidget { background: #101b23; alternate-background-color: #14232d;
     gridline-color: #293e4b; border: 1px solid #354b59; selection-background-color: #214653; }
 QHeaderView::section { background: #182b38; color: #b9d0df; border: 0;
     border-right: 1px solid #2b424f; padding: 3px; }
 QScrollBar:vertical { width: 12px; background: #14232d; }
 QScrollBar::handle:vertical { background: #536d7c; min-height: 24px; border-radius: 4px; }
+QGroupBox { border: 1px solid #354b59; border-radius: 4px; margin-top: 8px; padding-top: 8px; }
+QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #b9d0df; }
 QSplitter::handle { background: #354b59; height: 4px; }
 QToolTip { color: #e1eaf0; background: #263d4b; border: 1px solid #5c7988; }
 """
@@ -93,8 +97,8 @@ def table(headers):
     widget = QTableWidget(0, len(headers))
     widget.setHorizontalHeaderLabels(headers)
     widget.verticalHeader().hide()
-    widget.verticalHeader().setMinimumSectionSize(23)
-    widget.verticalHeader().setDefaultSectionSize(25)
+    widget.verticalHeader().setMinimumSectionSize(20)
+    widget.verticalHeader().setDefaultSectionSize(21)
     widget.setAlternatingRowColors(True)
     widget.setWordWrap(False)
     widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -240,20 +244,25 @@ class Window(QMainWindow):
         self.session_hint.hide()
         outer.addWidget(self.session_hint)
         self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.sessions = table(["Session / project", "Provider", "Status", "Latest update", "Last used", "Actions"])
-        self.sessions.setColumnWidth(0, 230)
-        self.sessions.setColumnWidth(1, 75)
-        self.sessions.setColumnWidth(2, 95)
+        self.sessions = table(["Session / project", "Provider", "Status", "Description / update", "Last used", "Actions"])
+        self.sessions.setColumnWidth(0, 200)
+        self.sessions.setColumnWidth(1, 65)
+        self.sessions.setColumnWidth(2, 90)
         self.sessions.setColumnWidth(3, 250)
         self.sessions.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.sessions.horizontalHeader().setStretchLastSection(False)
-        self.sessions.setColumnWidth(4, 145)
-        self.sessions.setColumnWidth(5, 165)
+        self.sessions.setColumnWidth(4, 130)
+        self.sessions.setColumnWidth(5, 150)
         self.sessions.setSortingEnabled(True)
         self.sessions.sortItems(4, Qt.SortOrder.DescendingOrder)
-        self.sessions.setToolTip("Double-click a session row to bring its linked console to the foreground.")
+        self.sessions.setToolTip("Double-click to focus a console. Press Delete to remove selected sessions after Yes/No confirmation.")
         self.sessions.itemDoubleClicked.connect(self.focus_session_item)
-        self.splitter.addWidget(self.sessions)
+        self.session_section = QGroupBox("Sessions")
+        session_layout = QVBoxLayout(self.session_section)
+        session_layout.setContentsMargins(4, 12, 4, 4)
+        session_layout.addWidget(self.sessions)
+        self.session_section.setMaximumHeight(100)
+        self.splitter.addWidget(self.session_section)
         self.communication = QWidget()
         communication = QVBoxLayout(self.communication)
         communication.setContentsMargins(0, 0, 0, 0)
@@ -270,6 +279,11 @@ class Window(QMainWindow):
         body = QVBoxLayout(self.comm_body)
         body.setSpacing(4)
         body.setContentsMargins(0, 0, 0, 0)
+        self.connected_section = QGroupBox("Connected sessions")
+        self.connected_section.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        connections = QVBoxLayout(self.connected_section)
+        connections.setContentsMargins(5, 12, 5, 5)
+        connections.setSpacing(4)
         connect = QHBoxLayout()
         self.source, self.target = QComboBox(), QComboBox()
         connect.addWidget(QLabel("Connect"))
@@ -277,12 +291,27 @@ class Window(QMainWindow):
         connect.addWidget(QLabel("↔"))
         connect.addWidget(self.target, 1)
         connect.addWidget(button("+ Add pair", self.add_pair))
-        body.addLayout(connect)
+        connections.addLayout(connect)
         pairs = QHBoxLayout()
         self.pairs = QComboBox()
         pairs.addWidget(self.pairs, 1)
         pairs.addWidget(button("Remove pair", self.remove_pair))
-        body.addLayout(pairs)
+        pairs.addWidget(button("Manage connections…", self.manage_connections))
+        connections.addLayout(pairs)
+        body.addWidget(self.connected_section)
+        self.messages_section = QGroupBox("Messages")
+        messages_layout = QVBoxLayout(self.messages_section)
+        messages_layout.setContentsMargins(5, 12, 5, 5)
+        messages_layout.setSpacing(4)
+        filters = QHBoxLayout()
+        self.message_filter = QComboBox()
+        for name, value in (("All messages", "all"), ("Needs attention", "attention"), ("Finished", "finished")):
+            self.message_filter.addItem(name, value)
+        self.message_filter.currentIndexChanged.connect(self.render_messages)
+        filters.addWidget(self.message_filter)
+        filters.addStretch()
+        filters.addWidget(button("Clean up finished…", self.cleanup_finished_messages))
+        messages_layout.addLayout(filters)
         self.messages = table(["Time", "From → To", "Message", "State"])
         self.messages.setColumnWidth(0, 65)
         self.messages.setColumnWidth(1, 200)
@@ -290,8 +319,8 @@ class Window(QMainWindow):
         self.messages.setMinimumHeight(100)
         self.messages.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.messages.customContextMenuRequested.connect(self.message_menu)
-        body.addWidget(self.messages, 1)
-        body.addWidget(button("Delete selected messages…", self.delete_messages))
+        messages_layout.addWidget(self.messages, 1)
+        messages_layout.addWidget(button("Delete selected messages…", self.delete_messages))
         compose = QHBoxLayout()
         self.recipient = QComboBox()
         self.recipient.setMinimumWidth(140)
@@ -303,14 +332,17 @@ class Window(QMainWindow):
         compose.addWidget(self.recipient)
         compose.addWidget(self.composer, 1)
         compose.addWidget(button("Send", self.send, True))
-        body.addLayout(compose)
+        messages_layout.addLayout(compose)
         note = QLabel("Operator messages always available · Configure Claude live alerts in the supervisor menu")
         note.setWordWrap(True)
-        body.addWidget(note)
-        communication.addWidget(self.comm_body)
+        messages_layout.addWidget(note)
+        body.addWidget(self.messages_section, 1)
+        communication.addWidget(self.comm_body, 1)
         self.comm_toggle.clicked.connect(lambda: self.collapse(self.comm_body, self.comm_toggle, "Session communication"))
         self.splitter.addWidget(self.communication)
         self.splitter.setChildrenCollapsible(False)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
         outer.addWidget(self.splitter, 1)
         footer = QHBoxLayout()
         self.status = QLabel("Broker disconnected" if not client else "Local broker connected")
@@ -458,7 +490,7 @@ class Window(QMainWindow):
                     for i in self.sessions.selectionModel().selectedRows()}
         query, provider = self.search.text().casefold(), self.filter.currentText()
         sessions = self.snapshot["sessions"]
-        visible = [s for s in sessions if query in (s["name"] + " " + s["cwd"] + " " + s["native_id"]).casefold()
+        visible = [s for s in sessions if query in (s["name"] + " " + s.get("description", "") + " " + s["cwd"] + " " + s["native_id"]).casefold()
                    and (provider == "All providers" or s["provider"] == provider)
                    and (not self.open_only.isChecked() or self.is_open(s))]
         self.sessions.setSortingEnabled(False)
@@ -469,12 +501,15 @@ class Window(QMainWindow):
             unattached = self.is_open(session) and session["provider"] == "codex" and session["status"] == "disconnected"
             status = "Not attached" if unattached else session["status"]
             latest = "Terminal open; check startup prompts or shared-server connection. Messages wait for attachment." if unattached else session["latest"]
+            description = session.get("description", "")
+            if description and not self.is_open(session):
+                latest = description
             external = self.snapshot.get("external_focus", {}).get(key)
             if external:
                 latest += " · External window linked for Focus; check its selected tab."
             for column, text in enumerate([session["name"], session["provider"], status, latest]):
                 item = SessionItem(str(text).replace("\n", " "))
-                item.setToolTip(f"{session['cwd']}\n{key}" if column == 0 else str(text))
+                item.setToolTip(f"{session['name']}\n{description}\n{session['cwd']}\n{key}" if column == 0 else (description + "\nLatest: " + session["latest"] if column == 3 and description else str(text)))
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 if column == 2:
                     item.setForeground(QColor("#f2bc48" if text == "waiting" else "#00d2d8" if text == "working" else "#a9bccd"))
@@ -528,6 +563,7 @@ class Window(QMainWindow):
             self.sessions.setItem(row, 5, item)
             self.sessions.setCellWidget(row, 5, actions)
         self.sessions.setSortingEnabled(True)
+        self.fit_session_section()
         for row in range(self.sessions.rowCount()):
             if self.sessions.item(row, 0).data(Qt.ItemDataRole.UserRole) in selected:
                 for col in range(self.sessions.columnCount()):
@@ -597,6 +633,30 @@ class Window(QMainWindow):
             QMessageBox.StandardButton.Cancel) == QMessageBox.StandardButton.Yes:
             self.rpc("external_focus_unlink", session=key, confirmed=True)
 
+    def fit_session_section(self):
+        if self.closed:
+            return
+        rows = max(1, self.sessions.rowCount())
+        height = max(90, self.sessions.horizontalHeader().height()
+                     + rows * self.sessions.verticalHeader().defaultSectionSize()
+                     + 2 * self.sessions.frameWidth() + 32)
+        self.session_section.setMaximumHeight(height)
+        if getattr(self, "_session_fit_height", None) != height:
+            self._session_fit_height = height
+            QTimer.singleShot(0, self.reflow_sections)
+
+    def reflow_sections(self):
+        if self.closed:
+            return
+        available = self.splitter.height() - self.splitter.handleWidth()
+        top = min(self.session_section.maximumHeight(), max(90, int(available * .6)))
+        self.splitter.setSizes([top, max(1, available - top)])
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "splitter"):
+            QTimer.singleShot(0, self.reflow_sections)
+
     @staticmethod
     def is_open(session):
         return bool(session.get("heartbeat") and time.time() - session["heartbeat"] < 20)
@@ -626,10 +686,14 @@ class Window(QMainWindow):
     def render_messages(self):
         selected = {self.messages.item(i.row(), 0).data(Qt.ItemDataRole.UserRole)
                     for i in self.messages.selectionModel().selectedRows()}
-        self.messages.setRowCount(len(self.snapshot["messages"]))
+        mode = self.message_filter.currentData()
+        finished = {"completed", "failed"}
+        visible = [m for m in self.snapshot["messages"]
+                   if mode == "all" or (m["state"] in finished if mode == "finished" else m["state"] not in finished)]
+        self.messages.setRowCount(len(visible))
         self.messages.clearSelection()
         names = {s["id"]: s["name"] for s in self.snapshot["sessions"]}
-        for row, message in enumerate(self.snapshot["messages"]):
+        for row, message in enumerate(visible):
             values = [time.strftime("%H:%M", time.localtime(message["created"])),
                       f"{names.get(message['sender'], message['sender'])} → {names.get(message['recipient'], message['recipient'])}",
                       message["body"], message["state"]]
@@ -641,6 +705,57 @@ class Window(QMainWindow):
             if message["id"] in selected:
                 for column in range(self.messages.columnCount()):
                     self.messages.item(row, column).setSelected(True)
+
+    def cleanup_finished_messages(self):
+        ids = [m["id"] for m in self.snapshot["messages"] if m["state"] in ("completed", "failed")]
+        if not ids:
+            self.status.setText("No finished messages to clean up in the loaded message list.")
+            return
+        self.delete_messages(ids)
+
+    def manage_connections(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Manage session connections")
+        dialog.resize(700, 340)
+        layout = QVBoxLayout(dialog)
+        note = QLabel("Select connections to remove (Ctrl+A selects all). Messages and sessions are retained; removing a pair stops its future direct agent communication.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        grid = table(["Session", "Connected session"])
+        names = {s["id"]: s["name"] for s in self.snapshot["sessions"]}
+        pairs = list(self.snapshot["pairs"])
+        grid.setRowCount(len(pairs))
+        for row, pair in enumerate(pairs):
+            for column, key in enumerate(pair):
+                item = QTableWidgetItem(names.get(key, key))
+                item.setData(Qt.ItemDataRole.UserRole, pair)
+                grid.setItem(row, column, item)
+        layout.addWidget(grid)
+        remove = button("Remove selected connections…")
+        def selected():
+            chosen = [grid.item(i.row(), 0).data(Qt.ItemDataRole.UserRole)
+                      for i in grid.selectionModel().selectedRows()]
+            if self.remove_connections(chosen):
+                dialog.accept()
+        remove.clicked.connect(selected)
+        layout.addWidget(remove)
+        close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close.rejected.connect(dialog.reject)
+        layout.addWidget(close)
+        dialog.exec()
+
+    def remove_connections(self, pairs):
+        chosen = [list(pair) for pair in pairs if list(pair) in [list(p) for p in self.snapshot["pairs"]]]
+        if not chosen:
+            return False
+        if QMessageBox.question(self, "Remove connections",
+                                f"Remove {len(chosen)} selected connection(s)? Sessions and messages are retained. Future direct agent communication on these pairs will be disabled.",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return False
+        for a, b in chosen:
+            self.rpc("pair", a=a, b=b, enabled=False)
+        return True
 
     def draft_changed(self, *args):
         if not self.draft_loading:
@@ -687,6 +802,11 @@ class Window(QMainWindow):
             dialog = QDialog(self)
             dialog.setWindowTitle("Terminal appearance — new consoles")
             form = QFormLayout(dialog)
+            linux_terminal = QComboBox()
+            linux_terminal.addItem("Automatic — Konsole if installed, otherwise xterm", "auto")
+            linux_terminal.addItem("Konsole — use my normal desktop profile", "konsole")
+            linux_terminal.addItem("xterm", "xterm")
+            linux_terminal.setCurrentIndex(linux_terminal.findData(value.get("linux_terminal", "auto")))
             font = QLineEdit(value["linux_font"])
             font.setMinimumWidth(260)
             font.setPlaceholderText("Inherit xterm defaults; enter monospace to customize")
@@ -697,11 +817,11 @@ class Window(QMainWindow):
             mac_profile = QLineEdit(value["mac_profile"])
             windows_profile.setPlaceholderText("Default Windows Terminal profile")
             mac_profile.setPlaceholderText("Default Terminal profile")
-            for label, widget in (("Ubuntu/xterm font", font), ("Ubuntu font size (points)", size),
+            for label, widget in (("Linux terminal", linux_terminal), ("xterm font", font), ("xterm font size (points)", size),
                                   ("Windows Terminal profile name or GUID", windows_profile),
                                   ("macOS Terminal profile name", mac_profile)):
                 form.addRow(label, widget)
-            note = QLabel("Applies to newly launched consoles. Windows/Mac font and size are configured in the selected terminal profile. Existing consoles keep their appearance.")
+            note = QLabel("Applies to newly launched consoles. Konsole inherits your normal desktop profile, including font and colors; change them in Konsole Settings. The font fields here apply only to xterm. Windows/Mac use the selected terminal profile. Existing consoles keep their appearance.")
             note.setWordWrap(True)
             form.addRow(note)
             buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -712,7 +832,7 @@ class Window(QMainWindow):
                 name = font.text().strip()
                 if not name and size.value() != value["linux_size"]:
                     name = "monospace"
-                self.rpc("terminal_appearance", value={"linux_font": name, "linux_size": size.value(),
+                self.rpc("terminal_appearance", value={"linux_terminal": linux_terminal.currentData(), "linux_font": name, "linux_size": size.value(),
                          "windows_profile": windows_profile.text(), "mac_profile": mac_profile.text()})
         self.rpc("terminal_appearance", callback=received)
 
@@ -878,22 +998,35 @@ class Window(QMainWindow):
             self.rpc("rename", session=key, name=name)
 
     def delete_session(self, key):
-        session = next((s for s in self.snapshot["sessions"] if s["id"] == key), None)
-        if not session:
+        self.delete_sessions([key])
+
+    def delete_selected_sessions(self):
+        keys = [self.sessions.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
+                for index in self.sessions.selectionModel().selectedRows()]
+        self.delete_sessions(keys)
+
+    def delete_sessions(self, keys):
+        # Capture IDs before confirmation: sorting/polling must not retarget DEL.
+        selected = [s for s in self.snapshot["sessions"] if s["id"] in set(keys)]
+        if not selected:
             return
         question = QMessageBox(self)
-        question.setWindowTitle("Permanently delete session")
-        question.setText(f"Delete {session['name']} from VISOR and {session['provider']}?")
-        question.setInformativeText("Its linked terminal will close immediately without Wrap up. Running work may be lost. "
-                                    "The saved provider conversation, VISOR messages and connections will be permanently deleted. "
+        question.setWindowTitle("Permanently delete sessions")
+        question.setTextFormat(Qt.TextFormat.PlainText)
+        names = "\n".join(s["name"] for s in selected[:8])
+        if len(selected) > 8:
+            names += f"\n…and {len(selected) - 8} more"
+        question.setText(f"Delete {len(selected)} selected session(s) from VISOR and their providers?\n\n{names}")
+        question.setInformativeText("Their linked terminals will close immediately without Wrap up. Running work may be lost. "
+                                    "The saved provider conversations, VISOR messages and connections will be permanently deleted. "
                                     "Codex also deletes spawned descendant conversations. Project source files are preserved. "
-                                    "This cannot be undone.")
-        remove = question.addButton("Close terminal and delete", QMessageBox.ButtonRole.DestructiveRole)
-        cancel = question.addButton(QMessageBox.StandardButton.Cancel)
-        question.setDefaultButton(cancel)
-        question.exec()
-        if question.clickedButton() == remove:
-            self.rpc("delete_session", session=key, confirmed=True)
+                                    "This cannot be undone. Choose Yes only to permanently delete these sessions.")
+        question.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        question.setDefaultButton(QMessageBox.StandardButton.No)
+        question.setEscapeButton(QMessageBox.StandardButton.No)
+        if question.exec() == QMessageBox.StandardButton.Yes:
+            for session in selected:
+                self.rpc("delete_session", session=session["id"], confirmed=True)
 
     def focus_session_item(self, item):
         key = item.data(Qt.ItemDataRole.UserRole)
@@ -936,7 +1069,9 @@ class Window(QMainWindow):
         if QMessageBox.question(self, "Delete messages",
                                 f"Delete {len(ids)} selected message(s) from Visor? "
                                 "Queued messages will be cancelled. Anything already sent "
-                                "cannot be retracted from the receiving session.") == QMessageBox.StandardButton.Yes:
+                                "cannot be retracted from the receiving session.",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             self.rpc("delete_messages", messages=ids)
 
     def clear_history(self):
@@ -1100,6 +1235,18 @@ class Window(QMainWindow):
             target.setCursor(shape)
 
     def eventFilter(self, watched, event):
+        if (watched in (self.messages, self.messages.viewport())
+                and event.type() == QEvent.Type.KeyPress
+                and event.key() == Qt.Key.Key_Delete and event.modifiers() == Qt.KeyboardModifier.NoModifier):
+            if not event.isAutoRepeat():
+                self.delete_messages()
+            return True
+        if (watched in (self.sessions, self.sessions.viewport())
+                and event.type() == QEvent.Type.KeyPress
+                and event.key() == Qt.Key.Key_Delete and event.modifiers() == Qt.KeyboardModifier.NoModifier):
+            if not event.isAutoRepeat():
+                self.delete_selected_sessions()
+            return True
         own_widget = isinstance(watched, QWidget) and QWidget.window(watched) is self
         if own_widget and event.type() == QEvent.Type.Show:
             watched.setMouseTracking(True)

@@ -55,6 +55,8 @@ class Store:
                 if column not in columns:
                     db.execute(f"ALTER TABLE sessions ADD COLUMN {column} TEXT")
             columns = {r[1] for r in db.execute("PRAGMA table_info(sessions)")}
+            if "description" not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN description TEXT NOT NULL DEFAULT ''")
             if "last_used" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN last_used REAL")
             db.execute("CREATE INDEX IF NOT EXISTS messages_pending ON messages(state,recipient,created)")
@@ -124,9 +126,14 @@ class Store:
         if provider not in ("codex", "claude") or not native_id or len(native_id) > 128:
             raise PolicyError("Invalid provider or session identity")
         key = f"{provider}:{native_id}"
+        if fields.get("description") == "":
+            fields.pop("description")  # A transient sparse roster must not erase saved context.
         with self.connect(True) as db:
             if db.execute("SELECT 1 FROM deleted_sessions WHERE session_id=?", (key,)).fetchone():
                 return key  # A stale discovery cannot resurrect a deleted conversation.
+            previous = db.execute("SELECT name,cwd FROM sessions WHERE id=?", (key,)).fetchone()
+            if previous and previous["name"] in (native_id, native_id[:12], f"{Path(previous['cwd']).name} · {native_id[:8]}"):
+                db.execute("UPDATE sessions SET name=? WHERE id=?", (name, key))
             db.execute("""INSERT INTO sessions(id,provider,native_id,name,cwd,updated)
                 VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated""",
                        (key, provider, native_id, name, cwd, time.time()))
@@ -138,7 +145,7 @@ class Store:
 
     @staticmethod
     def _update(db, key, fields):
-        allowed = {"name", "cwd", "status", "latest", "updated", "managed", "participates",
+        allowed = {"name", "description", "cwd", "status", "latest", "updated", "managed", "participates",
                    "window_token", "heartbeat", "process_id", "shutdown", "helper_identity", "window_identity", "last_used"}
         if fields.keys() - allowed:
             raise PolicyError("Invalid session fields")

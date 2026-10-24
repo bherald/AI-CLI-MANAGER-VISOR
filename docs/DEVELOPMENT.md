@@ -49,7 +49,7 @@ python3.12 scripts/bootstrap.py
 .venv/bin/python scripts/build.py
 ```
 
-Ubuntu needs xterm for separate windows, and wmctrl for X11 focus/arrangement. Wayland keeps
+Ubuntu uses Konsole (preferred) or xterm for separate windows, and wmctrl for X11 focus/arrangement. Wayland keeps
 launch/resume and the supervisor available, with window controls unavailable. Qt may need
 distribution runtime libraries, including EGL/OpenGL and xcb-cursor. On macOS, Terminal.app
 automation needs the user's OS permission; test the packaged app identity as well as Python.

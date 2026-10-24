@@ -216,8 +216,8 @@ class UICase(unittest.TestCase):
         self.assertEqual(base.cursor().shape(), Qt.CursorShape.IBeamCursor)
 
     def test_compact_session_and_message_rows(self):
-        self.assertEqual(self.window.sessions.verticalHeader().defaultSectionSize(), 25)
-        self.assertEqual(self.window.messages.verticalHeader().defaultSectionSize(), 25)
+        self.assertEqual(self.window.sessions.verticalHeader().defaultSectionSize(), 21)
+        self.assertEqual(self.window.messages.verticalHeader().defaultSectionSize(), 21)
         controls = {b.text(): b for b in self.window.arrange_box.findChildren(QPushButton)}
         with patch.object(self.window, "arrange") as arrange:
             controls["Cascade"].click()
@@ -442,7 +442,7 @@ class UICase(unittest.TestCase):
             self.window.poll()
             self.assertEqual(len(callbacks), 1)
             callbacks[0](snapshot, None)
-            schedule.assert_called_once_with(0, self.window.poll)
+            self.assertEqual(sum(call.args == (0, self.window.poll) for call in schedule.call_args_list), 1)
             self.assertFalse(self.window.polling)
             self.assertFalse(self.window.poll_pending)
 
@@ -462,12 +462,72 @@ class UICase(unittest.TestCase):
         dialogs = []
         def cancel(dialog):
             dialogs.append(dialog)
-            self.assertEqual(dialog.defaultButton().text(), "Cancel")
+            self.assertEqual(dialog.standardButton(dialog.defaultButton()), QMessageBox.StandardButton.No)
             self.assertIn("Running work may be lost", dialog.informativeText())
         with patch.object(QMessageBox, "exec", cancel), patch.object(self.window, "rpc") as rpc:
             self.window.delete_session("claude:chosen")
             rpc.assert_not_called()
         self.assertEqual(len(dialogs), 1)
+
+    def test_delete_key_uses_selected_ids_yes_no_and_never_typing_in_composer(self):
+        session = {"id": "codex:old", "native_id": "old", "provider": "codex", "name": "Old title",
+                   "cwd": "/fixture", "status": "disconnected", "latest": "", "participates": False, "heartbeat": None}
+        self.window.snapshot["sessions"] = [session]
+        self.window.render_sessions()
+        self.window.sessions.selectRow(0)
+        self.window.sessions.setFocus()
+        with patch.object(QMessageBox, "exec", return_value=QMessageBox.StandardButton.No), patch.object(self.window, "rpc") as rpc:
+            QTest.keyClick(self.window.sessions, Qt.Key.Key_Delete)
+            rpc.assert_not_called()
+        with patch.object(QMessageBox, "exec", return_value=QMessageBox.StandardButton.Yes), patch.object(self.window, "rpc") as rpc:
+            QTest.keyClick(self.window.sessions, Qt.Key.Key_Delete)
+            rpc.assert_called_once_with("delete_session", session="codex:old", confirmed=True)
+        self.window.composer.setText("typing")
+        with patch.object(self.window, "delete_selected_sessions") as remove:
+            QTest.keyClick(self.window.composer, Qt.Key.Key_Delete)
+            remove.assert_not_called()
+
+    def test_communication_has_separate_sections_and_sessions_fit_content(self):
+        self.assertEqual(self.window.session_section.title(), "Sessions")
+        self.assertEqual(self.window.connected_section.title(), "Connected sessions")
+        self.assertEqual(self.window.messages_section.title(), "Messages")
+        session = {"id": "codex:fixture", "native_id": "fixture", "provider": "codex", "name": "Fixture",
+                   "cwd": "/fixture", "status": "disconnected", "latest": "", "participates": False, "heartbeat": None}
+        self.window.snapshot["sessions"] = [session]
+        self.window.render_sessions()
+        self.assertLessEqual(self.window.session_section.maximumHeight(), 100)
+        QTest.qWait(20)
+        gap = self.window.communication.y() - (self.window.session_section.y() + self.window.session_section.height())
+        self.assertLessEqual(gap, self.window.splitter.handleWidth() + 2)
+        self.window.snapshot["sessions"] = [{**session, "id": f"codex:{i}"} for i in range(12)]
+        self.window.render_sessions()
+        self.assertGreater(self.window.session_section.maximumHeight(), 250)
+
+    def test_message_filters_and_finished_cleanup_preserve_unknown_and_queued(self):
+        self.window.snapshot["messages"] = [
+            {"id": state, "sender": "operator", "recipient": "test", "created": 0,
+             "body": "Test", "detail": "", "state": state}
+            for state in ("queued", "held", "delivery_unknown", "acknowledged", "completed", "failed")]
+        self.window.message_filter.setCurrentIndex(1)
+        self.window.render_messages()
+        self.assertEqual(self.window.messages.rowCount(), 4)
+        self.window.message_filter.setCurrentIndex(2)
+        self.assertEqual(self.window.messages.rowCount(), 2)
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), patch.object(self.window, "rpc") as rpc:
+            self.window.cleanup_finished_messages()
+            rpc.assert_called_once_with("delete_messages", messages=["completed", "failed"])
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.No), patch.object(self.window, "rpc") as rpc:
+            self.window.cleanup_finished_messages()
+            rpc.assert_not_called()
+
+    def test_selected_pair_removal_requires_yes_and_does_not_delete_history(self):
+        self.window.snapshot["pairs"] = [["a", "b"], ["a", "c"]]
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.No), patch.object(self.window, "rpc") as rpc:
+            self.assertFalse(self.window.remove_connections([["a", "b"]]))
+            rpc.assert_not_called()
+        with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), patch.object(self.window, "rpc") as rpc:
+            self.assertTrue(self.window.remove_connections([["a", "b"]]))
+            rpc.assert_called_once_with("pair", a="a", b="b", enabled=False)
 
     def test_poll_preserves_open_session_menu_and_wrap_up_target(self):
         session = {"id": "codex:chosen", "native_id": "chosen", "provider": "codex", "name": "Chosen",

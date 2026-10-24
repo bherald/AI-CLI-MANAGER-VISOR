@@ -5,7 +5,7 @@ Baseline revision: `a49f319`; this checkout adds the Linux fixes below.
 Recorded pre-beta build identity: `2026-10-20-linux-2`, so reopening replaces an older broker
 through the existing upgrade path rather than retaining its old window-control code.
 Locked environment: PySide6/Qt 6.12.0, PyInstaller 6.22.3. Installed prerequisites:
-`xterm`, `wmctrl`, `libegl1`, `libopengl0`, `libxcb-cursor0`.
+`konsole` (or `xterm`), `wmctrl`, `libegl1`, `libopengl0`, `libxcb-cursor0`.
 The visible window probe also uses `xprop` from `x11-utils`.
 
 ## Fixes established on this host
