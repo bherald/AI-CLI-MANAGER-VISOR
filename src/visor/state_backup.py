@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import time
@@ -79,6 +80,9 @@ def snapshot(root, *, prune=True):
 def restore(root, backup):
     """Caller must own both broker and supervisor locks throughout this operation."""
     root, backup = Path(root).resolve(), Path(backup).expanduser().resolve()
+    access = root / "activity-access"
+    if access.is_symlink() or access.exists() and not access.is_dir():
+        raise ValueError("Prism access directory must be an ordinary directory")
     if not backup.is_file() or backup == root / "visor.sqlite3":
         raise ValueError("Choose a separate existing VISOR backup file")
     with connection(backup.as_uri() + "?mode=ro", uri=True) as source:
@@ -87,7 +91,9 @@ def restore(root, backup):
         if source.execute("PRAGMA user_version").fetchone()[0] != 1:
             raise ValueError("Unsupported backup schema version")
         tables = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if tables != {"settings", "sessions", "pairs", "credentials", "deleted_sessions", "messages"}:
+        from .activity_store import ACTIVITY_TABLES
+        core = {"settings", "sessions", "pairs", "credentials", "deleted_sessions", "messages"}
+        if not core <= tables or not tables <= core | set(ACTIVITY_TABLES):
             raise ValueError("Not a supported VISOR state backup")
         if source.execute("SELECT COUNT(*) FROM sqlite_master WHERE type IN ('trigger','view')").fetchone()[0]:
             raise ValueError("Backup contains unsupported database objects")
@@ -117,6 +123,10 @@ def restore(root, backup):
                 Path(str(current) + suffix).unlink(missing_ok=True)
             os.replace(temp, current)
             (root / "broker.json").unlink(missing_ok=True)
+            if access.exists():
+                for credential in access.iterdir():
+                    if re.fullmatch(r"[a-f0-9]{64}\.json", credential.name):
+                        credential.unlink(missing_ok=True)
         finally:
             for suffix in ("", "-wal", "-shm"):
                 Path(str(temp) + suffix).unlink(missing_ok=True)

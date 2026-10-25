@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "id": "shared-chalkboard",
+  "title": "Prism \u00b7 a shared chalkboard",
+  "revision": 1,
+  "parent_record": "Example collaboration: notes, sketches and decisions",
+  "cards": [
+    {
+      "id": "notes",
+      "kind": "text",
+      "title": "Type together",
+      "geometry": [
+        16,
+        16,
+        380,
+        330
+      ],
+      "html": "<h2>One place to work together</h2><p>Click <b>Type / edit</b> to add a note. Save it so the participating sessions can read it.</p><p>Put an explanation beside a sketch or a picture. Drag a card by its title to arrange your workspace.</p>"
+    },
+    {
+      "id": "sketch",
+      "kind": "sketch",
+      "title": "Draw an idea",
+      "geometry": [
+        412,
+        16,
+        760,
+        330
+      ],
+      "canvas": [
+        1000,
+        400
+      ],
+      "strokes": [
+        {
+          "color": "#087d80",
+          "width": 4,
+          "points": [
+            [
+              120,
+              150
+            ],
+            [
+              250,
+              65
+            ],
+            [
+              380,
+              150
+            ],
+            [
+              380,
+              300
+            ],
+            [
+              120,
+              300
+            ],
+            [
+              120,
+              150
+            ]
+          ]
+        },
+        {
+          "color": "#20354b",
+          "width": 3,
+          "points": [
+            [
+              250,
+              300
+            ],
+            [
+              250,
+              210
+            ],
+            [
+              305,
+              210
+            ],
+            [
+              305,
+              300
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "picture",
+      "kind": "image",
+      "title": "Keep a picture beside the discussion",
+      "geometry": [
+        16,
+        362,
+        580,
+        290
+      ],
+      "path": "sample-picture.png",
+      "caption": "Locally generated example illustration."
+    },
+    {
+      "id": "decision",
+      "kind": "question",
+      "title": "What should we work on next?",
+      "geometry": [
+        612,
+        362,
+        560,
+        290
+      ],
+      "prompt": "What would help you explain the idea?",
+      "choices": [
+        "Add another sketch",
+        "Compare alternatives",
+        "Write the next steps"
+      ]
+    }
+  ]
+}

@@ -1,3 +1,36 @@
+# 1.4.0 beta candidate — Prism shared workspaces
+
+- Add shared Prism windows with movable cards for formatted notes, pictures,
+  diagrams, charts, questions and freehand drawings. Operators can type and draw;
+  Codex and Claude sessions with the required connections can contribute their own cards.
+- Give already-running sessions scoped Prism access without restarting them.
+  Revision checks protect newer content; saved replies remain recipient-scoped.
+- Preserve an operator's window dismissal across updates and restarts. Session
+  reopen requests produce a quiet indicator; the operator can reopen through
+  the chooser or the authenticated operator control path. Presentation is not read.
+- Add **Manage Prism windows…** to the main menu. Delete one explicitly selected
+  saved board after confirming its exact revision. Remove its history, replies,
+  membership and local drafts; retain shared images, backups and provider sessions.
+  Retry uncertain results with the same saved identity, and reject stale recreation.
+- Correct operator receipt polling: previously the GUI was denied and silently
+  kept waiting after the recipient had read a saved reply. Poll only board-scoped
+  metadata, display read separately from completion, and show transport failures.
+- Use muted backgrounds, readable headers and a slightly lighter drawing surface.
+- Report durable revision acceptance separately from a pending display projection.
+  Exact retries recover the saved result without creating duplicate revisions.
+- Keep unchanged board polling lightweight, and stage projection work outside the
+  database writer lock. Revision and deletion checks reject stale publication.
+- Apply changed policy to open windows without truncating drafts or drawings.
+  Invalid policy holds content operations; navigation and draft saving remain available.
+- Scroll question cards at small restored sizes so prompts, answers, controls and
+  full receipt labels remain reachable.
+- Destroy retired Prism windows on their GUI thread, keeping delayed replies
+  from accessing deleted widgets or recreating removed drafts.
+
+Verification for this unreleased candidate is recorded with its local delivery.
+Native interactive Windows/macOS Prism acceptance and live Claude model behavior
+remain unverified. The existing platform/package limits below still apply.
+
 # 1.3.1 beta 1 — communication and desktop usability
 
 - Make session communication a documented core workflow: explicit pairs,

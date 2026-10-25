@@ -2,7 +2,7 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. Use the supervisor to find and resume exact sessions, bring terminals forward, connect selected agents, and follow their coordination messages through delivery, acknowledgment and completion. Session communication and its local message history are a core part of VISOR, alongside terminal management and graceful wrap-up.
 
-**1.3.1 beta 1 — evaluation release.** Windows and Linux/X11 have recorded build and selected live checks. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**1.4.0 beta candidate — Prism shared workspaces.** This source prepares the next evaluation release; use the release page for published downloads. Prism has local Linux/X11 checks. Prior Windows/Linux build and desktop evidence does not establish interactive Prism acceptance. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
 
 Published packages are listed under [GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases). Exit an older supervisor before launching a new download; extract and keep the complete package directory together. The title and **About / diagnostics** identify the running version and executable.
 
@@ -250,3 +250,7 @@ See the [enhancement checklist](docs/ENHANCEMENTS.md) and [native acceptance che
 ## Tip this work
 
 If this work has helped you, you may leave an [optional one-time tip](https://github.com/sponsors/bherald?frequency=one-time). Tips help offset hardware, storage, electricity, hosting, and testing. A tip does not purchase support, consulting, access, priority, or any deliverable.
+
+## Prism windows
+
+Use shared native windows for notes, pictures, diagrams, charts, questions and freehand drawings. Codex and Claude sessions can contribute through scoped CLI/MCP access. See [Prism windows](PRISM.md) for setup, sharing and recovery.

@@ -188,7 +188,7 @@ class Store:
         return dict(row)
 
     def issue_credential(self, key, role="agent"):
-        if role not in ("agent", "helper"):
+        if role not in ("agent", "helper", "activity"):
             raise PolicyError("Invalid credential role")
         self.session(key)
         token = secrets.token_urlsafe(32)

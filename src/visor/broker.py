@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import secrets
 import shutil
+import sqlite3
+import stat
 import subprocess
 import sys
 import threading
@@ -17,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
 
+from .activity_store import ActivityService
 from .claude import OPTIONS as CLAUDE_OPTIONS
 from .claude import discover as discover_claude
 from .claude import hook_event, launch_settings, validate_options
@@ -40,7 +44,7 @@ from .providers import (
 from .store import PolicyError, Store
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-25-local-launch-recovery"
+BUILD = "2026-10-25-prism-readiness"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -48,19 +52,32 @@ WRAP_UP = ("Finish your current safe step, save context, report validation and r
            "when your wrap-up is complete. Existing approval rules still apply.")
 
 
+ACTIVITY_AGENT_ACTIONS = frozenset({"activity_list", "activity_get", "activity_publish", "activity_control",
+                                    "activity_share", "activity_asset", "activity_replies", "activity_acknowledge", "activity_limits"})
+ACTIVITY_OPERATOR_ACTIONS = frozenset({"activity_list", "activity_get", "activity_control", "activity_share",
+                                       "activity_reply", "activity_replies", "activity_edit", "activity_delete", "activity_view", "activity_bind", "activity_revoke", "activity_limits"})
+
+
+def activity_request_limit(policy):
+    # Standard JSON serializers may escape each document character as six bytes.
+    return max(65536, 4 * ((policy.max_image_bytes + 2) // 3) + 65536,
+               6 * policy.max_document_bytes + 65536)
+
+
 class Client:
     def __init__(self, root: Path, token=None):
         self.root = root
         self.token = token
 
-    def call(self, action, **params):
+    def call(self, operation, **params):
         endpoint = json.loads((self.root / "broker.json").read_text(encoding="utf-8"))
         # Broker endpoint is always local, even if a saved file is modified.
         port = int(endpoint["port"])
         token = self.token or endpoint["token"]
         request = urllib.request.Request(f"http://127.0.0.1:{port}/rpc",
-                                         data=json.dumps({"action": action, "params": params}).encode(),
-                                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+                                         data=json.dumps({"action": operation, "params": params}).encode(),
+                                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                                                  "X-Visor-Action": operation})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         try:
             with opener.open(request, timeout=40) as response:
@@ -78,6 +95,9 @@ class Broker:
     def __init__(self, root: Path):
         self.root = root
         self.store = Store(root)
+        self.activities = ActivityService(self.store)
+        self.activities.reset_presentations()
+        self.activity_access_lock = threading.Lock()
         self.token = secrets.token_urlsafe(32)
         self.stop = threading.Event()
         self.delivery_lock = threading.RLock()
@@ -89,7 +109,17 @@ class Broker:
         self.last_receipt_session = ""
         self.server = None
 
-    def dispatch(self, action, params, identity, role="agent"):
+    def dispatch(self, action, params, identity, role=None):
+        if role is None:
+            role = "operator" if identity == "operator" else "agent"
+        if not isinstance(action, str) or not isinstance(params, dict):
+            raise PolicyError("RPC requires an action and parameter object")
+        if action.startswith("activity_"):
+            return self.activity_action(action, params, identity, role)
+        if role == "activity":
+            raise PolicyError("Activity credentials can only operate Prism windows")
+        if role not in ("operator", "agent", "helper") or (identity == "operator") != (role == "operator"):
+            raise PolicyError("Invalid RPC principal")
         if role == "helper":
             return self.helper_action(action, params, identity)
         if identity != "operator":
@@ -102,7 +132,8 @@ class Broker:
                     "delivery_error": self.delivery_error, "refresh_error": self.refresh_error,
                     "provider_warnings": self.provider_warnings,
                     "receipt_error": " · ".join(self.receipt_errors.copy().values()),
-                    "external_focus": self.store.external_focus_links()}
+                    "external_focus": self.store.external_focus_links(),
+                    **self.activity_snapshot()}
         if action == "external_window_candidates":
             from .external_windows import candidates
             return candidates()
@@ -120,7 +151,7 @@ class Broker:
             self.store.set_external_focus(params["session"], None)
             return True
         if action == "ping":
-            return {"running": True, "version": "1.3.1", "build": BUILD}
+            return {"running": True, "version": "1.4.0", "build": BUILD}
         if action == "terminal_appearance":
             from .appearance import validate
             if "value" in params:
@@ -284,6 +315,98 @@ class Broker:
             self.stop.set()
             return True
         raise PolicyError("Unknown operator action")
+
+    def activity_snapshot(self):
+        try:
+            policy = asdict(self.activities.policy())
+            return {"activities": self.activities.list(None), "activity_policy": policy, "activity_error": ""}
+        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:
+            return {"activities": [], "activity_policy": None, "activity_error": str(exc)}
+
+    def activity_action(self, action, params, identity, role):
+        operator = role == "operator" and identity == "operator"
+        allowed = ACTIVITY_OPERATOR_ACTIONS if operator else ACTIVITY_AGENT_ACTIONS
+        if (not operator and (role not in ("agent", "activity") or identity == "operator")) or action not in allowed:
+            raise PolicyError("This credential cannot perform that Prism operation")
+        actor = None if operator else identity
+        if not operator:
+            self.store.session(actor)
+        if action == "activity_limits":
+            return asdict(self.activities.policy())
+        if action == "activity_list":
+            return self.activities.list(actor)
+        if action == "activity_get":
+            return self.activities.get(actor, params["id"])
+        if action == "activity_publish":
+            return self.activities.publish(actor, params["document"], params["request_id"], params.get("expected_revision", 0))
+        if action == "activity_control":
+            result = self.activities.control(actor, params["id"], params["action"], params["request_id"])
+            if params["action"] in ("open", "focus") and result["view_action"] in ("open", "focus"):
+                result = {**result, "projection": self.activities.projection_status(params["id"])}
+            return result
+        if action == "activity_share":
+            return self.activities.share(actor, params["id"], params["members"], params["request_id"])
+        if action == "activity_asset":
+            return self.activities.asset(actor, params["name"], params["data_base64"])
+        if action == "activity_replies":
+            board_id = params.get("board_id")
+            if operator:
+                if not isinstance(board_id, str) or not board_id:
+                    raise PolicyError("Operator receipt lookup requires an explicit board_id")
+                fields = ("id", "board_id", "card_id", "revision", "state", "recipient", "created")
+                return [{key: event[key] for key in fields}
+                        for event in self.activities.replies(None, board_id)]
+            return self.activities.replies(actor, board_id)
+        if action == "activity_acknowledge":
+            return self.activities.acknowledge(actor, params["event_id"])
+        if action == "activity_reply":
+            return self.activities.reply(params["id"], params["card_id"], params["revision"], params["answer"], params["request_id"])
+        if action == "activity_view":
+            return self.activities.view(params["id"], params["state"], params["revision"], params["view_seq"], params["request_id"])
+        if action == "activity_delete":
+            return self.activities.delete(params["id"], params["expected_revision"], params["request_id"], confirmed=params.get("confirmed"))
+        if action == "activity_edit":
+            return self.activities.edit(params["id"], params["card_id"], params["revision"], params["content"], params["request_id"])
+        return self.activity_access(params["session"], revoke=action == "activity_revoke", confirmed=params.get("confirmed"))
+
+    def activity_access(self, identity, *, revoke=False, confirmed=False):
+        if confirmed is not True:
+            raise PolicyError("Confirm changing this session's Prism access")
+        self.store.session(identity)
+        with self.activity_access_lock:
+            directory = self.root / "activity-access"
+            if directory.is_symlink():
+                raise PolicyError("Activity access directory must not be a symlink")
+            created = not directory.exists()
+            directory.mkdir(mode=0o700, exist_ok=True)
+            if os.name == "nt":
+                from .data_security import ensure_windows_private
+                ensure_windows_private(directory, created=created)
+            elif stat.S_IMODE(directory.stat().st_mode) & 0o077:
+                raise PolicyError("Activity access directory must be private")
+            path = directory / (hashlib.sha256(identity.encode("utf-8")).hexdigest() + ".json")
+            if path.is_symlink():
+                raise PolicyError("Activity access file must not be a symlink")
+            if revoke:
+                with self.store.connect(True) as db:
+                    db.execute("DELETE FROM credentials WHERE session_id=? AND role='activity'", (identity,))
+                path.unlink(missing_ok=True)
+                return {"session": identity, "revoked": True}
+            valid = False
+            if path.is_file() and path.stat().st_size <= 16384:
+                try:
+                    config = json.loads(path.read_text(encoding="utf-8"))
+                    valid = (isinstance(config, dict) and config.get("session") == identity
+                             and config.get("root") == str(self.root.resolve()) and isinstance(config.get("token"), str)
+                             and self.store.authenticate_principal(config["token"]) == (identity, "activity"))
+                except (OSError, ValueError):
+                    valid = False
+            if not valid:
+                token = self.store.issue_credential(identity, role="activity")
+                write_private(path, {"root": str(self.root.resolve()), "session": identity, "token": token})
+            elif os.name != "nt":
+                path.chmod(0o600)
+            return {"session": identity, "credential_file": str(path), "enabled": True}
 
     def agent_action(self, action, params, identity):
         if action == "channel_written":
@@ -699,11 +822,7 @@ class BrokerLock:
         self.file.close()
 
 
-def serve(root: Path):
-    lock = BrokerLock(root / "broker.lock")
-    broker = Broker(root)
-    broker.store.recover()
-
+def handler_for(broker):
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
             super().setup()
@@ -717,13 +836,21 @@ def serve(root: Path):
                 if self.path != "/rpc" or self.headers.get("Origin"):
                     raise PolicyError("Unsupported request origin")
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 65536:
-                    raise PolicyError("Invalid request size")
                 token = self.headers.get("Authorization", "").removeprefix("Bearer ")
                 principal = ("operator", "operator") if secrets.compare_digest(token, broker.token) else broker.store.authenticate_principal(token)
                 if not principal:
                     raise PolicyError("Authentication required")
+                action_hint = self.headers.get("X-Visor-Action", "")
+                _identity, role = principal
+                allowed = ACTIVITY_OPERATOR_ACTIONS if role == "operator" else ACTIVITY_AGENT_ACTIONS if role in ("agent", "activity") else ()
+                limit = activity_request_limit(broker.activities.policy()) if action_hint in allowed else 65536
+                if not 0 < length <= limit:
+                    raise PolicyError("Invalid request size")
                 data = json.loads(self.rfile.read(length))
+                if not isinstance(data, dict):
+                    raise PolicyError("RPC request must be an object")
+                if length > 65536 and (data.get("action") != action_hint or data.get("action") not in allowed):
+                    raise PolicyError("Large requests require a matching permitted activity action")
                 result = broker.dispatch(data["action"], data.get("params", {}), *principal)
                 payload, status = {"result": result}, 200
             except Exception as exc:  # noqa: BLE001 -- HTTP request boundary returns structured errors
@@ -735,7 +862,15 @@ def serve(root: Path):
             self.end_headers()
             self.wfile.write(content)
 
-    server = LoopbackHTTPServer(("127.0.0.1", 0), Handler)
+    return Handler
+
+
+def serve(root: Path):
+    lock = BrokerLock(root / "broker.lock")
+    broker = Broker(root)
+    broker.store.recover()
+
+    server = LoopbackHTTPServer(("127.0.0.1", 0), handler_for(broker))
     # Complete in-flight responses before process exit releases the broker lock.
     # In particular, stop sets the event before its HTTP response has been written.
     server.daemon_threads = False

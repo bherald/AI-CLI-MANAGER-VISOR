@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-cli-manager-visor"
-version = "1.3.1"
+version = "1.4.0"
 description = "A desktop supervisor for independent Codex and Claude Code terminals"
 license = "MIT"
 license-files = ["LICENSE"]

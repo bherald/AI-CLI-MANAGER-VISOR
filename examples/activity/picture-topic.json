@@ -1,0 +1,13 @@
+{
+  "schema_version":1,
+  "id":"picture-topic",
+  "title":"Look closely, then discuss",
+  "revision":1,
+  "session_link":{"id":"example-session","label":"Example visual discussion"},
+  "parent_record":"Example topic: a picture and a question",
+  "cards":[
+    {"id":"picture","kind":"image","title":"A picture as shared reference","geometry":[16,16,600,380],"path":"sample-picture.png","caption":"Local sample illustration. Your photos, scans and screenshots can take this place."},
+    {"id":"detail","kind":"text","title":"Keep the explanation beside it","geometry":[632,16,360,280],"html":"<h2 style='color:#0b7b80'>Pictures can carry the discussion</h2><p>Keep a photo, a diagram, a scanned page or a screenshot visible while the session explains what matters.</p><p><b>You can ask:</b> What am I looking at? Which detail matters? Can you compare another version?</p><p>Updates keep the same card identity and preserve your arrangement.</p>"},
+    {"id":"picture-question","kind":"question","title":"Ask about what you see","geometry":[632,312,360,300],"prompt":"What would you like the session to explain about this picture?"}
+  ]
+}

@@ -21,7 +21,7 @@ subprocess.run([sys.executable, str(root / "scripts/audit_public_repo.py")], cwd
 files = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
                                 cwd=root).decode().split("\0")
 files = sorted(set(filter(None, files)) - (private_files if args.public else set()))
-output = root / "dist" / ("visor-source-1.3.1" + ("-public" if args.public else "") + ".tar.gz")
+output = root / "dist" / ("visor-source-1.4.0" + ("-public" if args.public else "") + ".tar.gz")
 output.parent.mkdir(exist_ok=True)
 with tarfile.open(output, "w:gz") as bundle:
     for name in files:

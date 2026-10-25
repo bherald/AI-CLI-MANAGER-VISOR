@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "learning-board",
+  "title": "Make the next step visible",
+  "revision": 1,
+  "session_link": {"id": "example-session", "label": "Example learning session"},
+  "parent_record": "Example topic: turn an idea into one useful action",
+  "cards": [
+    {"id":"explanation","kind":"text","title":"The idea, explained clearly","geometry":[16,16,390,300],"html":"<h2 style='color:#0b7b80'>A working surface beside the conversation</h2><p>A session can put useful material where you can <b>see it, compare it and respond</b>.</p><ul><li>Keep an explanation beside a picture.</li><li>Move and resize anything.</li><li>Ask for a change without losing your place.</li></ul><table><tr><th>Session supplies</th><th>You control</th></tr><tr><td>Content and updates</td><td>Layout and attention</td></tr></table><p><i>This is formatted text, not a Markdown editor.</i></p>"},
+    {"id":"process","kind":"diagram","title":"Illustration: from question to action","geometry":[422,16,450,300],"nodes":[{"id":"ask","label":"What do I want\nto understand?","x":0,"y":0,"w":155,"h":70,"color":"#e5f2f1"},{"id":"see","label":"Show an example","x":220,"y":0,"w":155,"h":70,"color":"#e9eef8"},{"id":"try","label":"Try one small step","x":220,"y":150,"w":155,"h":70,"color":"#fff0d6"},{"id":"learn","label":"Keep what helps","x":0,"y":150,"w":155,"h":70,"color":"#e6f1e1"}],"edges":[{"from":"ask","to":"see"},{"from":"see","to":"try"},{"from":"try","to":"learn"},{"from":"learn","to":"ask"}],"caption":"Illustrations are editable scene data: shapes, labels and connections."},
+    {"id":"comparison","kind":"chart","title":"Comparison: choose where to focus","geometry":[16,332,390,260],"labels":["Learn","Try","Review","Keep"],"values":[8,6,4,7],"unit":"","caption":"Illustrative values only. A session can replace the labels and numbers."},
+    {"id":"question","kind":"question","title":"Your next move","geometry":[422,332,450,300],"prompt":"What would make this explanation more useful to you?","choices":["Show a picture or example","Break it into smaller steps","Compare the alternatives","Let me try it"]}
+  ]
+}

@@ -41,6 +41,8 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
+from .activity import ActivityManager
+from .activity_management import manage_prism_windows
 from .broker import ensure_broker
 from .layout import Rect
 from .platforms import enable_window_resize, focus_verified
@@ -155,6 +157,8 @@ class Window(QMainWindow):
         self.client = client
         self.pool = QThreadPool(self)
         self.jobs = set()
+        self.status = QLabel("Broker disconnected" if not client else "Local broker connected")
+        self.prism = ActivityManager(self)
         self.snapshot = {"sessions": [], "messages": [], "pairs": []}
         self.polling = False
         self.poll_pending = False
@@ -191,12 +195,15 @@ class Window(QMainWindow):
         self.filter.currentTextChanged.connect(self.render_sessions)
         search.addWidget(self.search, 1)
         search.addWidget(self.filter)
+        self.prism_button = button("Prism", self.prism.choose)
+        search.addWidget(self.prism_button)
         search.addWidget(button("Refresh", self.refresh))
         search.addWidget(button("+ New", self.new_session, True))
         menu_button = button("...")
         menu_button.setAccessibleName("Supervisor menu")
         menu = QMenu(menu_button)
-        for name, callback in [("Register saved session…", self.register),
+        for name, callback in [("Manage Prism windows…", lambda: manage_prism_windows(self)),
+                               ("Register saved session…", self.register),
                                ("Start / reconnect broker", self.connect_broker),
                                ("Terminal appearance…", self.terminal_appearance),
                                ("State backup settings…", self.backup_settings),
@@ -360,7 +367,6 @@ class Window(QMainWindow):
         self.splitter.setStretchFactor(1, 1)
         outer.addWidget(self.splitter, 1)
         footer = QHBoxLayout()
-        self.status = QLabel("Broker disconnected" if not client else "Local broker connected")
         self.status.setWordWrap(True)
         footer.addWidget(self.status, 1)
         footer.addWidget(QSizeGrip(self))
@@ -478,8 +484,12 @@ class Window(QMainWindow):
                 self.schedule_reconnect(error)
                 return
             self.snapshot = snapshot
+            if not snapshot.get("activity_error"):
+                self.prism.update(snapshot.get("activities", []), snapshot.get("activity_policy"))
+            else:
+                self.prism.hold_policy(snapshot["activity_error"])
             self.filter.setToolTip(snapshot.get("provider_warnings", {}).get("claude", ""))
-            self.status.setText(snapshot.get("delivery_error") or snapshot.get("refresh_error") or snapshot.get("receipt_error") or
+            self.status.setText(snapshot.get("delivery_error") or snapshot.get("refresh_error") or snapshot.get("receipt_error") or snapshot.get("activity_error") or
                                 ("Loading Codex sessions…" if self.refreshing else "Local broker connected · Independent terminal windows"))
             self.agent_toggle.blockSignals(True)
             self.agent_toggle.setChecked(snapshot["agent_enabled"])
@@ -556,6 +566,7 @@ class Window(QMainWindow):
             more = button("...")
             menu = QMenu(more)
             menu.addAction("Rename…", lambda k=key: self.rename(k))
+            menu.addAction("Enable Prism access", lambda k=key: self.prism.bind(k))
             menu.addAction("Copy session ID", lambda sid=session["native_id"]: QApplication.clipboard().setText(sid))
             if external:
                 menu.addAction("Unlink external Focus window…", lambda k=key: self.unlink_external(k))
@@ -1170,6 +1181,7 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         if self.allow_close:
+            self.prism.close()
             self.closed = True
             self.timer.stop()
             self.draft_timer.stop()
