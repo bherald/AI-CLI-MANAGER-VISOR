@@ -23,6 +23,7 @@ class AppearanceCase(unittest.TestCase):
     def test_xterm_font_arguments_preserve_command_and_title_guards(self):
         command = ["helper", "literal argument"]
         with patch("visor.platforms.sys.platform", "linux"), patch("visor.platforms.shutil.which", return_value="xterm"), patch("visor.platforms.subprocess.Popen") as launch:
+            launch.return_value.wait.return_value = 0
             terminal_launch(command, "/project", "unique", {"linux_terminal": "xterm", "linux_font": "DejaVu Sans Mono", "linux_size": 16})
         args = launch.call_args.args[0]
         self.assertEqual(args[1:5], ["-fa", "DejaVu Sans Mono", "-fs", "16"])
@@ -31,6 +32,7 @@ class AppearanceCase(unittest.TestCase):
 
     def test_windows_profile_is_one_argument_and_project_is_preserved(self):
         with patch("visor.platforms.sys.platform", "win32"), patch("visor.platforms.shutil.which", return_value="wt"), patch("visor.platforms.subprocess.Popen") as launch:
+            launch.return_value.wait.return_value = 0
             terminal_launch(["helper"], "project space", "unique", {"windows_profile": "Profile ; literal"})
         args = launch.call_args.args[0]
         self.assertEqual(args[args.index("--profile") + 1], "Profile ; literal")

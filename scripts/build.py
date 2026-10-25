@@ -12,12 +12,27 @@ import sysconfig
 import uuid
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+root = Path(__file__).resolve().parents[1]
+# Packaged VISOR terminals may export their private Qt/Python loader paths.
+# Re-exec before importing build dependencies so both this interpreter and its
+# PyInstaller children use the installed build environment. Keep unrelated paths.
+clean_env = os.environ.copy()
+for key in ("LD_LIBRARY_PATH", "LD_LIBRARY_PATH_ORIG", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH"):
+    if key in clean_env:
+        entries = [entry for entry in clean_env[key].split(os.pathsep)
+                   if entry and not Path(entry).resolve().is_relative_to((root / "dist").resolve())]
+        if entries:
+            clean_env[key] = os.pathsep.join(entries)
+        else:
+            clean_env.pop(key)
+if clean_env != dict(os.environ):
+    os.execve(sys.executable, [sys.executable, *sys.argv], clean_env)
+
+sys.path.insert(0, str(root / "src"))
 from visor.build_storage import check_space
 from visor.bundles import create_archive
 from visor.notices import copy_qt_notices, native_inventory
 
-root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("--output-dir", type=Path, default=root / "dist")
 output = parser.parse_args().output_dir.resolve()
@@ -38,12 +53,12 @@ for name, windowed in (("visor", True), ("visor-console", False)):
     if sys.platform == "darwin" and not windowed:
         # A console-enabled app bundle lets PyInstaller relocate non-code data
         # out of code directories before the helper is nested in the GUI app.
-        subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm",
+        subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
                         "--distpath", str(bundle_output),
                         "--workpath", str(root / "build" / name),
                         str(root / "scripts/macos_console.spec")], cwd=root, env=env, check=True)
         continue
-    args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--onedir", "--name", name,
+    args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--name", name,
             "--paths", str(root / "src"), "--distpath", str(bundle_output),
             "--workpath", str(root / "build" / name), "--specpath", str(root / "build"),
             "--hidden-import", "visor.ui", "--hidden-import", "PySide6.QtWidgets",

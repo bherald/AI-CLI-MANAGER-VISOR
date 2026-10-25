@@ -26,6 +26,8 @@ from .platforms import WindowNotFound, terminal_launch, windows
 from .process import hidden_options
 from .process_identity import descendants, expected_helper_image, process_identity, retired
 from .providers import (
+    ProviderResponseTooLarge,
+    ProviderTimeout,
     codex_peer_tools,
     create_session,
     delete_provider_session,
@@ -38,7 +40,7 @@ from .providers import (
 from .store import PolicyError, Store
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-24-release-1.3.1"
+BUILD = "2026-10-25-local-launch-recovery"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -401,7 +403,17 @@ class Broker:
                 terminal_launch([*own_command(console=True), "--terminal", str(ticket)], session["cwd"], title)
             self.store.update_session(key, last_used=time.time())
         except Exception:
-            self.store.update_session(key, window_token=None, latest="Terminal launch failed")
+            try:
+                # Unlink competes atomically with the helper's one-shot consume.
+                # If we win, a helper cannot proceed to start its provider.
+                ticket.unlink()
+            except FileNotFoundError:
+                # A helper may have started before an error reached the broker.
+                # Preserve its association for inspection; never invite a replay.
+                self.store.update_session(key, latest="Terminal launch outcome uncertain; inspect before resuming")
+            else:
+                credential.unlink(missing_ok=True)
+                self.store.update_session(key, window_token=None, latest="Terminal launch failed")
             raise
 
     @staticmethod
@@ -615,6 +627,11 @@ class Broker:
                 self.store.save_receipt_scan(session["id"], {})
                 self.receipt_errors.pop(session["id"], None)
                 continue
+            state = self.store.get_setting("receipt_scan:" + session["id"], {})
+            if state.get("retry_after", 0) > time.time():
+                if state.get("scan_warning"):
+                    self.receipt_errors[session["id"]] = session["name"] + ": receipt check unavailable: " + state["scan_warning"]
+                continue
             active.append((session, messages))
         # Rotate fairly, keeping provider metadata refresh independent of receipt I/O.
         active.sort(key=lambda item: (item[0]["id"] <= self.last_receipt_session, item[0]["id"]))
@@ -623,17 +640,24 @@ class Broker:
                 return
             key = session["id"]
             self.last_receipt_session = key
+            state = self.store.get_setting("receipt_scan:" + key, {})
             try:
-                state = self.store.get_setting("receipt_scan:" + key, {})
                 receipts, state = scan_codex_receipts(session, messages, state)
                 for mid, completed in receipts.items():
                     self.store.acknowledge(key, mid, completed)
+                state.update(retry_after=0, scan_failures=0, scan_warning="")
                 self.store.save_receipt_scan(key, state)
                 if state.get("warning"):
                     self.receipt_errors[key] = session["name"] + ": " + state["warning"]
                 else:
                     self.receipt_errors.pop(key, None)
             except (OSError, RuntimeError, ValueError) as exc:
+                failures = min(state.get("scan_failures", 0) + 1, 6)
+                state.update(retry_after=time.time() + min(300, 15 * 2 ** (failures - 1)),
+                             scan_failures=failures, scan_warning=str(exc))
+                if isinstance(exc, (ProviderTimeout, ProviderResponseTooLarge)):
+                    state["page_size"] = max(1, state.get("page_size", 50) // 2)
+                self.store.save_receipt_scan(key, state)
                 self.receipt_errors[key] = session["name"] + ": receipt check unavailable: " + str(exc)
                 log.debug("Explicit Codex reply receipts unavailable", exc_info=True)
 

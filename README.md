@@ -68,7 +68,9 @@ The top **Sessions** panel fits its rows. **Session communication** below has
 separate **Connected sessions** and **Messages** panels. Compact rows, sortable
 columns and description search help with longer saved-session lists. Descriptions
 come from existing Codex previews or Claude transcript metadata; custom names are
-kept and no model request is made to summarize your history.
+kept and no model request is made to summarize your history. Connected pairs have
+a scrollable table; matching session names show a provider/session identifier.
+The communication area scrolls when the window is too short to show every control.
 
 Select session rows and press **Delete** for a **Yes/No** permanent-delete
 confirmation, defaulting to **No**. This uses the same exact-provider and managed

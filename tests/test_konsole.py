@@ -26,6 +26,7 @@ class KonsoleCase(unittest.TestCase):
     def test_separate_window_inherits_profile_and_preserves_literal_command(self):
         command = ["/tmp/worker space", "literal's; $(not-a-shell)"]
         with patch("visor.platforms.sys.platform", "linux"), patch("visor.platforms.shutil.which", return_value="/usr/bin/konsole"), patch("visor.platforms.subprocess.Popen") as launch:
+            launch.return_value.wait.return_value = 0
             terminal_launch(command, "/tmp/project's space", "VISOR-unique", {"linux_font": "Old xterm font", "linux_size": 16})
         args = launch.call_args.args[0]
         self.assertIn("--separate", args)
@@ -39,6 +40,7 @@ class KonsoleCase(unittest.TestCase):
     def test_packaged_konsole_uses_system_qt_without_losing_provider_environment(self):
         env = {"LD_LIBRARY_PATH": "/bundle/lib", "LD_LIBRARY_PATH_ORIG": "/system/lib", "QT_PLUGIN_PATH": "/bundle/qt", "QT_QPA_PLATFORM_PLUGIN_PATH": "/bundle/plugins", "PATH": "/providers:/usr/bin", "DISPLAY": ":10"}
         with patch.dict(os.environ, env, clear=True), patch("visor.platforms.sys.frozen", True, create=True), patch("visor.platforms.sys.platform", "linux"), patch("visor.platforms.shutil.which", return_value="konsole"), patch("visor.platforms.subprocess.Popen") as launch:
+            launch.return_value.wait.return_value = 0
             terminal_launch(["helper"], "/project", "token")
         actual = launch.call_args.kwargs["env"]
         self.assertEqual(actual["LD_LIBRARY_PATH"], "/system/lib")

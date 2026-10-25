@@ -2,6 +2,14 @@
 
 Release: **1.3.1 beta 1**, build `2026-10-24-release-1.3.1`.
 
+Local repair candidate: `2026-10-25-local-launch-recovery` (not a new public release).
+The Linux terminal launcher removes nested frozen-bundle library paths and reports
+immediate launch failures. Failed unconsumed tickets are retired; consumed tickets
+retain uncertain ownership. Connected pairs and small windows scroll, matching
+names show session identity, and receipt failures retain exact full-history cursors
+with bounded retries. A single turn above the transport limit remains pending.
+Validation and local desktop acceptance are recorded separately from public builds.
+
 Beta is an evaluation label. It does not mean complete platform acceptance, completed binary-distribution review, or production suitability.
 
 | Area | Evidence available | Still unverified |

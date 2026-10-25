@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import time
 import uuid
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -21,11 +22,13 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLayout,
     QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizeGrip,
     QSizePolicy,
     QSpinBox,
@@ -275,8 +278,14 @@ class Window(QMainWindow):
         heading.addWidget(self.comm_toggle, 1)
         heading.addWidget(self.agent_toggle)
         communication.addLayout(heading)
-        self.comm_body = QWidget()
-        body = QVBoxLayout(self.comm_body)
+        self.comm_body = QScrollArea()
+        self.comm_body.setWidgetResizable(True)
+        self.comm_body.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.comm_body.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.comm_contents = QWidget()
+        self.comm_body.setWidget(self.comm_contents)
+        body = QVBoxLayout(self.comm_contents)
+        body.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         body.setSpacing(4)
         body.setContentsMargins(0, 0, 0, 0)
         self.connected_section = QGroupBox("Connected sessions")
@@ -292,12 +301,19 @@ class Window(QMainWindow):
         connect.addWidget(self.target, 1)
         connect.addWidget(button("+ Add pair", self.add_pair))
         connections.addLayout(connect)
-        pairs = QHBoxLayout()
-        self.pairs = QComboBox()
-        pairs.addWidget(self.pairs, 1)
-        pairs.addWidget(button("Remove pair", self.remove_pair))
-        pairs.addWidget(button("Manage connections…", self.manage_connections))
-        connections.addLayout(pairs)
+        self.pairs = table(["Session", "Connected session"])
+        self.pairs.setAccessibleName("Connected session pairs")
+        self.pairs.setMinimumHeight(70)
+        self.pairs.setMaximumHeight(112)
+        self.pairs.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.pairs.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.pairs.setToolTip("Select connections; scroll to see all pairs. Session IDs distinguish matching names.")
+        connections.addWidget(self.pairs)
+        pair_actions = QHBoxLayout()
+        pair_actions.addStretch()
+        pair_actions.addWidget(button("Remove selected pairs…", self.remove_pair))
+        pair_actions.addWidget(button("Manage connections…", self.manage_connections))
+        connections.addLayout(pair_actions)
         body.addWidget(self.connected_section)
         self.messages_section = QGroupBox("Messages")
         messages_layout = QVBoxLayout(self.messages_section)
@@ -333,8 +349,7 @@ class Window(QMainWindow):
         compose.addWidget(self.composer, 1)
         compose.addWidget(button("Send", self.send, True))
         messages_layout.addLayout(compose)
-        note = QLabel("Operator messages always available · Configure Claude live alerts in the supervisor menu")
-        note.setWordWrap(True)
+        note = QLabel("Operator messages always available · Claude live alerts: supervisor menu")
         messages_layout.addWidget(note)
         body.addWidget(self.messages_section, 1)
         communication.addWidget(self.comm_body, 1)
@@ -490,6 +505,7 @@ class Window(QMainWindow):
                     for i in self.sessions.selectionModel().selectedRows()}
         query, provider = self.search.text().casefold(), self.filter.currentText()
         sessions = self.snapshot["sessions"]
+        labels = self.session_labels()
         visible = [s for s in sessions if query in (s["name"] + " " + s.get("description", "") + " " + s["cwd"] + " " + s["native_id"]).casefold()
                    and (provider == "All providers" or s["provider"] == provider)
                    and (not self.open_only.isChecked() or self.is_open(s))]
@@ -507,7 +523,7 @@ class Window(QMainWindow):
             external = self.snapshot.get("external_focus", {}).get(key)
             if external:
                 latest += " · External window linked for Focus; check its selected tab."
-            for column, text in enumerate([session["name"], session["provider"], status, latest]):
+            for column, text in enumerate([labels[key], session["provider"], status, latest]):
                 item = SessionItem(str(text).replace("\n", " "))
                 item.setToolTip(f"{session['name']}\n{description}\n{session['cwd']}\n{key}" if column == 0 else (description + "\nLatest: " + session["latest"] if column == 3 and description else str(text)))
                 item.setData(Qt.ItemDataRole.UserRole, key)
@@ -650,6 +666,10 @@ class Window(QMainWindow):
             return
         available = self.splitter.height() - self.splitter.handleWidth()
         top = min(self.session_section.maximumHeight(), max(90, int(available * .6)))
+        if self.comm_body.isVisible():
+            communication_minimum = (self.comm_contents.minimumSizeHint().height()
+                                     + self.comm_toggle.height() + 8)
+            top = min(top, max(90, available - communication_minimum))
         self.splitter.setSizes([top, max(1, available - top)])
 
     def resizeEvent(self, event):
@@ -661,27 +681,55 @@ class Window(QMainWindow):
     def is_open(session):
         return bool(session.get("heartbeat") and time.time() - session["heartbeat"] < 20)
 
+    def session_labels(self):
+        sessions = self.snapshot["sessions"]
+        counts = Counter(s["name"].casefold() for s in sessions)
+        suffix_counts = Counter((s["name"].casefold(), s["id"].split(":", 1)[-1][-8:])
+                                for s in sessions)
+        labels = {}
+        for session in sessions:
+            key, name = session["id"], session["name"]
+            if counts[name.casefold()] > 1:
+                provider, _, native = key.partition(":")
+                short = f"{provider}:{native[-8:]}"
+                if suffix_counts[name.casefold(), native[-8:]] > 1:
+                    short = key
+                labels[key] = f"[{short}] {name}"
+            else:
+                labels[key] = name
+        return labels
+
     def populate_combos(self):
-        names = {s["id"]: s["name"] for s in self.snapshot["sessions"]}
+        names = self.session_labels()
         for combo in (self.source, self.target, self.recipient):
             current = combo.currentData() or (self.draft_recipient if combo is self.recipient else None)
             combo.blockSignals(True)
             combo.clear()
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(12)
             for key, name in names.items():
                 combo.addItem(name, key)
+                combo.setItemData(combo.count() - 1, f"{name}\n{key}", Qt.ItemDataRole.ToolTipRole)
             index = combo.findData(current)
             if index >= 0:
                 combo.setCurrentIndex(index)
             elif combo is self.recipient and (self.draft_recipient or self.composer.text()):
                 combo.setCurrentIndex(-1)
             combo.blockSignals(False)
-        current = self.pairs.currentData()
-        self.pairs.clear()
-        for a, b in self.snapshot["pairs"]:
-            self.pairs.addItem(f"{names.get(a,a)} ↔ {names.get(b,b)}", [a, b])
-        index = self.pairs.findData(current)
-        if index >= 0:
-            self.pairs.setCurrentIndex(index)
+        selected = {tuple(self.pairs.item(index.row(), 0).data(Qt.ItemDataRole.UserRole))
+                    for index in self.pairs.selectionModel().selectedRows()}
+        scroll = self.pairs.verticalScrollBar().value()
+        self.pairs.setRowCount(len(self.snapshot["pairs"]))
+        self.pairs.clearSelection()
+        for row, pair in enumerate(self.snapshot["pairs"]):
+            for column, key in enumerate(pair):
+                item = QTableWidgetItem(names.get(key, key))
+                item.setData(Qt.ItemDataRole.UserRole, list(pair))
+                item.setToolTip(f"{names.get(key, key)}\n{key}")
+                self.pairs.setItem(row, column, item)
+                if tuple(pair) in selected:
+                    item.setSelected(True)
+        self.pairs.verticalScrollBar().setValue(scroll)
 
     def render_messages(self):
         selected = {self.messages.item(i.row(), 0).data(Qt.ItemDataRole.UserRole)
@@ -692,7 +740,7 @@ class Window(QMainWindow):
                    if mode == "all" or (m["state"] in finished if mode == "finished" else m["state"] not in finished)]
         self.messages.setRowCount(len(visible))
         self.messages.clearSelection()
-        names = {s["id"]: s["name"] for s in self.snapshot["sessions"]}
+        names = self.session_labels()
         for row, message in enumerate(visible):
             values = [time.strftime("%H:%M", time.localtime(message["created"])),
                       f"{names.get(message['sender'], message['sender'])} → {names.get(message['recipient'], message['recipient'])}",
@@ -722,13 +770,14 @@ class Window(QMainWindow):
         note.setWordWrap(True)
         layout.addWidget(note)
         grid = table(["Session", "Connected session"])
-        names = {s["id"]: s["name"] for s in self.snapshot["sessions"]}
+        names = self.session_labels()
         pairs = list(self.snapshot["pairs"])
         grid.setRowCount(len(pairs))
         for row, pair in enumerate(pairs):
             for column, key in enumerate(pair):
                 item = QTableWidgetItem(names.get(key, key))
                 item.setData(Qt.ItemDataRole.UserRole, pair)
+                item.setToolTip(f"{names.get(key, key)}\n{key}")
                 grid.setItem(row, column, item)
         layout.addWidget(grid)
         remove = button("Remove selected connections…")
@@ -914,9 +963,9 @@ class Window(QMainWindow):
             self.rpc("pair", a=self.source.currentData(), b=self.target.currentData())
 
     def remove_pair(self):
-        pair = self.pairs.currentData()
-        if pair:
-            self.rpc("pair", a=pair[0], b=pair[1], enabled=False)
+        pairs = [self.pairs.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
+                 for index in self.pairs.selectionModel().selectedRows()]
+        self.remove_connections(pairs)
 
     def refresh(self):
         if not self.client:

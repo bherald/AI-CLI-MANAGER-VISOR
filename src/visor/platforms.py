@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
+from pathlib import Path
 
 from .layout import Rect
 from .process import hidden_options, run
@@ -38,13 +39,34 @@ def _desktop_terminal_environment():
     environment = os.environ.copy()
     if getattr(sys, "frozen", False):
         original = environment.pop("LD_LIBRARY_PATH_ORIG", None)
-        if original is None:
-            environment.pop("LD_LIBRARY_PATH", None)
+        # A frozen GUI launches a different frozen console executable. Its
+        # bootloader may save the GUI's bundle path as the "original" path.
+        # Restoring that value unchanged loads bundled Qt/C++ into system Konsole.
+        bundle = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent / "_internal")).resolve()
+        entries = [entry for entry in (original or "").split(os.pathsep)
+                   if entry and not Path(entry).resolve().is_relative_to(bundle)]
+        if entries:
+            environment["LD_LIBRARY_PATH"] = os.pathsep.join(entries)
         else:
-            environment["LD_LIBRARY_PATH"] = original
+            environment.pop("LD_LIBRARY_PATH", None)
         for key in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH"):
             environment.pop(key, None)
     return environment
+
+
+
+def _start_linux_terminal(args, cwd):
+    # Detect immediate loader/display failures without retaining terminal output.
+    process = subprocess.Popen(args, cwd=cwd, env=_desktop_terminal_environment(),
+                               start_new_session=True, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+    try:
+        result = process.wait(timeout=0.3)
+    except subprocess.TimeoutExpired:
+        return process
+    if result:
+        raise WindowUnavailable(f"Terminal failed to start (exit {result}). Check the terminal installation and display.")
+    return process
 
 
 def terminal_launch(command: list[str], cwd: str, token: str, appearance=None):
@@ -92,16 +114,14 @@ end run'''
             # Separate process/window, default font/colors, no existing tabs reused.
             # Literal local/remote formats omit %w, so OSC title changes cannot
             # replace the ownership token. Konsole adds its standard app suffix.
-            return subprocess.Popen([executable, "--separate", "--workdir", cwd,
+            return _start_linux_terminal([executable, "--separate", "--workdir", cwd,
                                      "-p", f"LocalTabTitleFormat={token}",
                                      "-p", f"RemoteTabTitleFormat={token}",
-                                     "-e", *command], cwd=cwd, env=_desktop_terminal_environment(),
-                                    start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                     "-e", *command], cwd)
         # Providers/shells emit OSC title changes. Keep the launch token stable.
         font = ["-fa", settings["linux_font"], "-fs", str(settings["linux_size"])] if settings["linux_font"] else []
-        return subprocess.Popen([executable, *font, "-T", token, "-n", token,
-                          "-xrm", "XTerm.vt100.allowTitleOps: false", "-e", *command], cwd=cwd,
-                         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return _start_linux_terminal([executable, *font, "-T", token, "-n", token,
+                                      "-xrm", "XTerm.vt100.allowTitleOps: false", "-e", *command], cwd)
 
 
 class Windows:

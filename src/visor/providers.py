@@ -13,7 +13,7 @@ from pathlib import Path
 from websockets.client import ClientProtocol
 from websockets.frames import Frame, Opcode
 from websockets.http11 import Response
-from websockets.protocol import OPEN
+from websockets.protocol import CLOSED, CLOSING, OPEN
 from websockets.uri import parse_uri
 
 from .process import hidden_options, run
@@ -21,6 +21,14 @@ from .session_text import label, summary
 
 
 class ProviderUnavailable(RuntimeError):
+    pass
+
+
+class ProviderTimeout(ProviderUnavailable):
+    pass
+
+
+class ProviderResponseTooLarge(ProviderUnavailable):
     pass
 
 
@@ -88,6 +96,7 @@ class CodexRPC:
         self.wire_lock = threading.RLock()
         self.ready = threading.Event()
         self.connection_error = None
+        self.connection_error_kind = None
         self.protocol.send_request(self.protocol.connect())
         self._flush()
         self.reader = threading.Thread(target=self._read, daemon=True)
@@ -124,11 +133,24 @@ class CodexRPC:
                             fragments.clear()
                             if "id" in msg and "method" not in msg:
                                 self.responses.put(msg)
+                # The Sans-I/O protocol reports CLOSE and oversized-frame failures
+                # through its state, not an exception. The proxy can keep stdout
+                # open after that failure; do not wait for a misleading RPC timeout.
+                if self.protocol.state in (CLOSING, CLOSED):
+                    close = self.protocol.close_rcvd or self.protocol.close_sent
+                    if close and close.code == 1009:
+                        self.connection_error = "Codex response exceeds the 8 MiB transport limit"
+                        self.connection_error_kind = "response_too_large"
+                    else:
+                        code = f" (code {close.code})" if close else ""
+                        self.connection_error = self.connection_error or "Codex control connection closed" + code
+                    break
         except (OSError, ValueError) as exc:
             self.connection_error = str(exc)
         finally:
             self.ready.set()
-            self.responses.put({"error": {"message": "Codex daemon connection closed"}})
+            self.responses.put({"error": {"message": self.connection_error or "Codex daemon connection closed",
+                                          "kind": self.connection_error_kind}})
 
     def _flush(self):
         for data in self.protocol.data_to_send():
@@ -150,10 +172,12 @@ class CodexRPC:
             try:
                 response = self.responses.get(timeout=max(0, deadline - time.monotonic()))
             except queue.Empty as exc:
-                raise ProviderUnavailable("Codex daemon did not respond; no session was resumed") from exc
+                raise ProviderTimeout(f"Codex {method} did not respond before the deadline; request outcome is unconfirmed") from exc
             if "id" not in response or response.get("id") == request_id:
                 if "error" in response:
-                    raise ProviderUnavailable(str(response["error"].get("message", "Codex request failed")))
+                    error_type = (ProviderResponseTooLarge if response["error"].get("kind") == "response_too_large"
+                                  else ProviderUnavailable)
+                    raise error_type(str(response["error"].get("message", "Codex request failed")))
                 return response.get("result", {})
 
     def close(self):
@@ -365,7 +389,7 @@ def scan_codex_receipts(session, messages, state=None, *, now=None):
         return {}, {}
     with CodexRPC() as rpc:
         def page(at):
-            result = rpc.call("thread/turns/list", {"threadId": session["native_id"], "limit": 50,
+            result = rpc.call("thread/turns/list", {"threadId": session["native_id"], "limit": state.get("page_size", 50),
                 "itemsView": "full", "sortDirection": "desc", "cursor": at})
             if not isinstance(result, dict) or not isinstance(result.get("data", []), list):
                 raise ProviderUnavailable("Codex receipt history returned an invalid page")
@@ -377,10 +401,10 @@ def scan_codex_receipts(session, messages, state=None, *, now=None):
         receipts.update(codex_reply_receipts(recent.get("data", []), messages))
         state["pages_checked"] = state.get("pages_checked", 0) + 1
         if not recent.get("nextCursor") or ids <= receipts.keys():
-            state.update(cursor=None, seen=[], backfill_after=now + 300, warning="")
+            state.update(cursor=None, seen=[], backfill_after=now + 300, backfill_failures=0, warning="")
             return receipts, state
         new_messages = ids - set(previous.get("known_ids", []))
-        if not cursor and not new_messages and now < state.get("backfill_after", 0):
+        if not new_messages and now < state.get("backfill_after", 0):
             return receipts, state
         at = cursor or recent["nextCursor"]
         try:
@@ -393,10 +417,18 @@ def scan_codex_receipts(session, messages, state=None, *, now=None):
                 raise ProviderUnavailable("Codex receipt history repeated its pagination cursor")
             seen.add(at)
             state.update(cursor=following, seen=sorted(seen) if following else [],
-                         backfill_after=0 if following else now + 300, warning="")
+                         backfill_after=0 if following else now + 300, backfill_failures=0, warning="")
         except (OSError, RuntimeError, ValueError) as exc:
-            # Preserve valid recent receipts even if an older cursor became invalid.
-            state.update(cursor=None, seen=[], backfill_after=now + 60, warning=str(exc))
+            # Full pages remain lossless. On transport pressure, retry the same
+            # cursor with fewer turns on a later poll; never skip an unseen turn.
+            failures = min(state.get("backfill_failures", 0) + 1, 4)
+            state.update(backfill_after=now + min(300, 60 * 2 ** (failures - 1)),
+                         backfill_failures=failures, warning=str(exc))
+            if isinstance(exc, (ProviderTimeout, ProviderResponseTooLarge)):
+                state.update(cursor=at, page_size=max(1, state.get("page_size", 50) // 2))
+            else:
+                # Invalid/expired cursors must restart from a newly returned cursor.
+                state.update(cursor=None, seen=[])
     return receipts, state
 
 

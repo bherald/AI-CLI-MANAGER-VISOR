@@ -72,6 +72,7 @@ class PlatformsCase(unittest.TestCase):
     @patch("visor.platforms.subprocess.Popen")
     @patch("visor.platforms.shutil.which", return_value="/usr/bin/xterm")
     def test_linux_launch_preserves_identity_and_argument_boundaries(self, _, popen):
+        popen.return_value.wait.return_value = 0
         command = ["/tmp/visor helper", "--terminal", "/tmp/a b'c/ticket.json"]
         with patch("visor.platforms.sys.platform", "linux"):
             terminal_launch(command, "/tmp/a b'c", "unique", {"linux_terminal": "xterm"})
