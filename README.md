@@ -8,6 +8,18 @@ Published packages are listed under [GitHub releases](https://github.com/bherald
 
 Source is MIT licensed. Provider accounts, provider software and their normal permissions remain yours to manage. VISOR does not bypass provider approvals.
 
+## See VISOR and Prism
+
+VISOR keeps sessions, connections and coordination messages together. Prism gives you a shared workspace for notes, pictures, charts, diagrams, questions and sketches.
+
+![VISOR main window with example Codex and Claude sessions, connections and messages](docs/images/visor-main.png)
+
+*Main VISOR window with illustrative sessions and messages. No live sessions are shown.*
+
+![Prism sample board with notes, a picture, chart, diagram, sketch and a question](docs/images/prism-workspace.png)
+
+*Prism local preview: a sample solar workshop planned with six movable cards. All content is illustrative; the scores are examples, not measured results.*
+
 ## What you can do
 
 - Find saved Codex and Claude Code sessions, then resume the exact conversation in its project.
