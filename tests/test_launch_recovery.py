@@ -12,8 +12,8 @@ from visor.platforms import WindowUnavailable, _desktop_terminal_environment, _s
 class LaunchRecoveryCase(unittest.TestCase):
     def test_nested_frozen_library_path_does_not_reach_system_terminal(self):
         for original, expected in (("/bundle/_internal", None),
-                                   ("/bundle/_internal:/system/lib:/bundle/_internal/Qt/lib", "/system/lib")):
-            env = {"LD_LIBRARY_PATH": "/bundle/_internal:/bundle/_internal",
+                                   (os.pathsep.join(["/bundle/_internal", "/system/lib", "/bundle/_internal/Qt/lib"]), "/system/lib")):
+            env = {"LD_LIBRARY_PATH": os.pathsep.join(["/bundle/_internal", "/bundle/_internal"]),
                    "LD_LIBRARY_PATH_ORIG": original, "QT_PLUGIN_PATH": "/bundle/plugins",
                    "DISPLAY": ":10", "PATH": "/usr/bin"}
             with self.subTest(original=original), patch.dict(os.environ, env, clear=True), \
