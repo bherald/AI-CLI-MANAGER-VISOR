@@ -38,3 +38,10 @@ These fixes are included in the local 1.4.0 beta candidate. The entries below de
 - **Fix:** Schedule retired windows for Qt deferred deletion on their owning GUI thread after disabling callbacks and timers. Drain deferred deletion in affected UI test fixtures. Ordinary operator close/reopen behavior is unchanged.
 - **Regression:** `tests/test_activity_qt_lifetime.py` forces worker GC before GUI event processing, verifies destruction on the GUI thread, then delivers a late reply callback after deletion and verifies no draft recreation. The regression fails on the prior source. The focused mixed UI/projection suite passes 54 tests; lint passes.
 - **Verification limit:** The exact original segmentation fault was not reproduced in smaller test slices. Full frozen-suite and native package validation must be repeated after integration; this evidence proves the ownership defect and its fix, not exclusive causation of that crash.
+
+## PRISM-6 — Windows rooted image paths reached filesystem lookup
+
+- **Trigger:** A forward-slash rooted path such as `/tmp/image.png` is supplied on Windows.
+- **Cause:** Windows treats a rooted path without a drive as not fully absolute. Checking only `is_absolute()` and a Windows drive missed that form, allowing a missing-file error before the intended relative-path rejection.
+- **Fix:** Reject any Windows path anchor, which covers both drive and root forms, before filesystem lookup. Relative image paths remain supported. Test expectations also compare resolved temporary paths so macOS symlinks and Windows short-path aliases do not cause false failures.
+- **Regression:** `tests/test_activity_document.py` exercises Windows path semantics on every host; the regression fails on the prior source. `tests/test_activity_cli.py` verifies the scoped client uses the resolved data directory. Native build results are recorded with the release.

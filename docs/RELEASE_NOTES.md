@@ -26,6 +26,8 @@
   full receipt labels remain reachable.
 - Destroy retired Prism windows on their GUI thread, keeping delayed replies
   from accessing deleted widgets or recreating removed drafts.
+- Reject drive-less rooted image paths on Windows before filesystem access,
+  and normalize temporary-path expectations in Mac and Windows tests.
 
 Verification for this unreleased candidate is recorded with its local delivery.
 Native interactive Windows/macOS Prism acceptance and live Claude model behavior

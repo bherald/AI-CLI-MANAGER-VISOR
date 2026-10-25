@@ -61,7 +61,7 @@ class ActivityCLICase(unittest.TestCase):
 
     def test_explicit_credential_constructs_only_scoped_client(self):
         result = self.invoke("list")
-        self.client_type.assert_called_once_with(self.root, token="fixture-agent-token")
+        self.client_type.assert_called_once_with(self.root.resolve(), token="fixture-agent-token")
         self.client.call.assert_called_once_with("activity_list")
         self.assertEqual(result, {"status": "ok"})
         self.assertNotIn("fixture-agent-token", json.dumps(result))

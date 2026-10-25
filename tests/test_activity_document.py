@@ -4,13 +4,14 @@ import json
 import os
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 from PySide6.QtGui import QImage
 
 from visor.activity_document import (
     ActivityPolicy,
+    _relative_image,
     list_replies,
     read_document,
     resolve_image,
@@ -109,12 +110,20 @@ class ActivityDocumentCase(unittest.TestCase):
             with self.subTest(path=value), self.assertRaises(ValueError):
                 resolve_image(self.path, value)
 
+    def test_windows_rooted_image_paths_are_rejected_before_filesystem_lookup(self):
+        with patch("visor.activity_document.Path", PureWindowsPath):
+            for value in ("/tmp/image.png", "/image.png"):
+                with self.subTest(path=value), self.assertRaisesRegex(ValueError, "stay relative"):
+                    _relative_image(value, ActivityPolicy())
+            self.assertEqual(_relative_image("assets/image.png", ActivityPolicy()),
+                             PureWindowsPath("assets/image.png"))
+
     @unittest.skipIf(os.name == "nt", "Native symlink creation may require extra privilege")
     def test_image_symlink_escape_rejected_and_internal_link_accepted(self):
         self.write()
         self.image()
         (self.root / "link.png").symlink_to("image.png")
-        self.assertEqual(resolve_image(self.path, "link.png"), self.root / "image.png")
+        self.assertEqual(resolve_image(self.path, "link.png"), (self.root / "image.png").resolve())
         with tempfile.TemporaryDirectory() as outside:
             target = self.image(Path(outside) / "outside.png")
             (self.root / "escape.png").symlink_to(target)

@@ -87,7 +87,7 @@ def _unique_objects(items, label):
 def _relative_image(value, policy):
     _text(value, "image path", policy, nonempty=True)
     path = Path(value)
-    if (path.is_absolute() or PureWindowsPath(value).drive or "\\" in value
+    if (path.is_absolute() or PureWindowsPath(value).anchor or "\\" in value
             or ":" in value or ".." in path.parts):
         raise ValueError("Image path must stay relative to the activity document")
     if path.suffix.lower() not in _RASTERS:
