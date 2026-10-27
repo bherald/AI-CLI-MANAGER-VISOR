@@ -21,7 +21,7 @@ from visor.activity_components import KINDS, component, template
 from visor.activity_contract import LEGACY_KINDS
 from visor.activity_document import ActivityPolicy, _validate
 from visor.broker import Broker, Client, handler_for
-from visor.paths import own_command, write_private
+from visor.paths import data_dir, own_command, write_private
 from visor.prism_web import PrismWebServer
 from visor.store import PolicyError
 
@@ -30,7 +30,7 @@ class ActivityAuthoringCase(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = data_dir(str(Path(self.temp.name) / "private data"))
         self.broker = Broker(self.root)
         self.store = self.broker.store
         self.owner = self.store.upsert_session("codex", "author", "Release author", str(self.root))

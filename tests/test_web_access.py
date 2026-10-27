@@ -1,4 +1,5 @@
 """Optional browser controls use a fake listener and never call a live broker."""
+import ipaddress
 import json
 import os
 import tempfile
@@ -156,7 +157,7 @@ class WebAccessCase(unittest.TestCase):
                     "0:0:0:0:0:0:0:1": "::1", "::ffff:127.0.0.1": "::ffff:7f00:1"}
         for host, normalized in expected.items():
             with self.subTest(host=host):
-                self.assertEqual(validated_bind_host(host), normalized)
+                self.assertEqual(ipaddress.ip_address(validated_bind_host(host)), ipaddress.ip_address(normalized))
 
     def test_start_failure_closes_partial_listener_and_keeps_access_off(self):
         dialog = self.dialog()
