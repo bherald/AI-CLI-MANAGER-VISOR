@@ -1,5 +1,4 @@
 """Provider discovery must not preserve stale names or unproven liveness."""
-import sqlite3
 import tempfile
 import time
 import unittest
@@ -46,7 +45,7 @@ class DiscoveryReconciliationCase(unittest.TestCase):
     def test_legacy_names_preserved_as_possible_aliases_during_migration(self):
         # Create an actual prior schema by dropping only the new additive columns.
         key = self.store.upsert_session("codex", self.sid, "Legacy custom name", str(self.root))
-        with sqlite3.connect(self.store.path) as db:
+        with self.store.connect(True) as db:
             db.execute("ALTER TABLE sessions DROP COLUMN provider_name")
             db.execute("ALTER TABLE sessions DROP COLUMN name_is_alias")
         migrated = Store(self.root)

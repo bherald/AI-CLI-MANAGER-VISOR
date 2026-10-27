@@ -26,7 +26,7 @@ Local Linux build and desktop shortcut delivery completed on 2026-10-27.
 The locked source pipeline, extracted-package acceptance, actual prior-1.4.0
 helper upgrade and desktop launch checks passed. Native Windows/TUI acceptance
 remains pending.
-See the [release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.1)
+See the [release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.2)
 for exact hosted package results and checksums, and the [completed feature and
 defect checklist](RELEASE_1_4_1.md) for source validation and remaining limits.
 Interactive Windows/Codex TUI acceptance remains separate from hosted builds.

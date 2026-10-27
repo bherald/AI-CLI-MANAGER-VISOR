@@ -1,6 +1,6 @@
 # VISOR 1.4.1 beta — release evidence
 
-Release: [v1.4.1-beta.1](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.1).
+Release: [v1.4.1-beta.2](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.2).
 This is an evaluation beta. Read the versioned release for the exact source
 commit, hosted job results, available platform assets and SHA-256 checksums.
 
@@ -36,6 +36,10 @@ resolution links and verification limits are attached to the corresponding issue
 - The Codex 0.164.0 handoff failure was reproduced in an isolated temporary
   app-server without model turns. Initial naming made default, legacy and
   paginated threads resumable by a second client after creator closure.
+
+The first hosted Windows attempt exposed an unclosed connection in the new
+migration test cleanup. The fixture now uses the store's explicitly closing
+transaction context. The final beta tag reruns all platforms with that correction.
 
 ## Limits retained
 

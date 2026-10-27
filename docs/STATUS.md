@@ -1,7 +1,7 @@
 # Beta status and evidence
 
-Release: **1.4.1 beta**, tag `v1.4.1-beta.1`. See the
-[versioned release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.1)
+Release: **1.4.1 beta**, tag `v1.4.1-beta.2`. See the
+[versioned release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.2)
 for exact hosted build results and package checksums.
 
 Source release: **1.4.1**, build `2026-10-26-prism-compact-discovery`.
