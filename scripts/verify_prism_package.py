@@ -185,7 +185,8 @@ def verify(executable):
             cli = subprocess.run([*command, "--credential", str(credential_path), "--activity", "catalog"],
                                  cwd=work, env=env, capture_output=True, timeout=20,
                                  check=False, **hidden_options())
-            require(cli.returncode == 0, "Frozen scoped authoring CLI failed")
+            require(cli.returncode == 0, "Frozen scoped authoring CLI failed: "
+                    + cli.stderr.decode("utf-8", errors="replace")[-1000:])
             require(json.loads(cli.stdout)["schema_version"] == 1, "Frozen authoring CLI catalog mismatch")
             candidate = current["document"]
             candidate["revision"] = 3

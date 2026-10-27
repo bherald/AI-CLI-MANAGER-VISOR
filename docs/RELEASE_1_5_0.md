@@ -1,6 +1,6 @@
 # VISOR 1.5.0 local review candidate
 
-Build: `2026-10-27-prism-table-agent-ui-r4`.
+Build: `2026-10-27-prism-table-agent-ui-r5`.
 
 The operator approved local implementation, testing, Linux packaging and desktop
 shortcut delivery. Public source publication, tags and release assets are held

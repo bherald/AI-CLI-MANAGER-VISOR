@@ -1,6 +1,6 @@
 # Current local review candidate
 
-**1.5.0**, build `2026-10-27-prism-table-agent-ui-r4`, is under local review.
+**1.5.0**, build `2026-10-27-prism-table-agent-ui-r5`, is under local review.
 The new single Prism workspace, rich components, typed events, responsive browser
 and multi-row grid actions are described in [RELEASE_1_5_0.md](RELEASE_1_5_0.md).
 Local Linux package checks and desktop delivery passed, including the existing

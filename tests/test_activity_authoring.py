@@ -320,6 +320,9 @@ class ActivityAuthoringCase(unittest.TestCase):
         catalog = invoke("catalog", "--kind", "table", "--include-schema")
         self.assertEqual(catalog["components"][0]["kind"], "table")
         self.assertIn("document_schema", catalog)
+        with patch.dict(self.environment, {"PYTHONIOENCODING": "cp1252"}):
+            portable = invoke("catalog")
+        self.assertEqual({entry["kind"] for entry in portable["components"]}, set(KINDS) | set(LEGACY_KINDS))
         document = template("decision-board", "cli-pipeline", "CLI synthetic review")
         source = self.root / "author-document.json"
         write_private(source, document)

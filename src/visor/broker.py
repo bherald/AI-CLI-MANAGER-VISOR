@@ -44,7 +44,7 @@ from .providers import (
 from .store import PolicyError, Store, canonical_uuid, operator_reply_input
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-27-prism-table-agent-ui-r4"
+BUILD = "2026-10-27-prism-table-agent-ui-r5"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "

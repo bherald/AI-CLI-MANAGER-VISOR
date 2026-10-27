@@ -69,7 +69,8 @@ def main():
         from .activity_cli import run_activity
         arguments = (["--credential", str(args.credential)] if args.credential else []) + args.activity
         try:
-            print(json.dumps(run_activity(arguments, root), ensure_ascii=False))
+            # JSON escapes preserve Unicode on legacy Windows console encodings.
+            print(json.dumps(run_activity(arguments, root)))
         except (OSError, ValueError) as exc:
             raise SystemExit("Prism: " + str(exc)) from None
         return
