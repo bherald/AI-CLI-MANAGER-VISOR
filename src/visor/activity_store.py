@@ -437,6 +437,7 @@ class ActivityService:
             card["contributor"] = previous_cards.get(card["id"], {}).get("contributor", actor)
         candidate["contributors"] = {card["id"]: card["contributor"] for card in candidate["cards"]}
         candidate["last_editor"] = actor
+        candidate["updated_at"] = _stamp()
         _validate(candidate, policy)
         encoded = _json(candidate)
         if len(encoded.encode("utf-8")) > policy.max_document_bytes:
@@ -455,7 +456,7 @@ class ActivityService:
                 if self._policy_value(self.store.setting(db, "activity_policy", {})) != policy:
                     raise PolicyError("Activity policy changed during validation; retry the publish")
                 self._check_asset_identities(db, identities)
-                created = _stamp()
+                created = candidate["updated_at"]
                 if current:
                     db.execute("UPDATE activity_boards SET title=?,revision=?,updated=? WHERE id=?",
                                (candidate["title"], candidate["revision"], created, identity))
@@ -696,6 +697,7 @@ class ActivityService:
         card["html" if card["kind"] == "text" else "strokes"] = content
         document["revision"] += 1
         document["last_editor"] = "operator"
+        document["updated_at"] = _stamp()
         _validate(document, policy)
         encoded = _json(document)
         if len(encoded.encode("utf-8")) > policy.max_document_bytes:
@@ -711,7 +713,7 @@ class ActivityService:
                     raise PolicyError("Activity changed; review the current card before editing")
                 if self._policy_value(self.store.setting(db, "activity_policy", {})) != policy:
                     raise PolicyError("Activity policy changed during validation; retry the edit")
-                created = _stamp()
+                created = document["updated_at"]
                 db.execute("UPDATE activity_boards SET revision=?,updated=? WHERE id=?", (document["revision"], created, id))
                 db.execute("INSERT INTO activity_revisions VALUES(?,?,?,?,?)", (id, document["revision"], encoded, content_hash, created))
                 result = {"id": id, "revision": document["revision"], "owner": board["owner"], "accepted": True, "request_id": request_id}

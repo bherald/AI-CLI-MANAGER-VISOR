@@ -41,10 +41,10 @@ from .providers import (
     scan_codex_receipts,
     session_command,
 )
-from .store import PolicyError, Store
+from .store import PolicyError, Store, canonical_uuid, operator_reply_input
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-25-prism-readiness"
+BUILD = "2026-10-26-prism-compact-discovery"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -66,6 +66,8 @@ def activity_request_limit(policy):
 
 class Client:
     def __init__(self, root: Path, token=None):
+        if token is not None and (not isinstance(token, str) or not token.strip()):
+            raise PolicyError("Explicit scoped credentials must contain a nonempty token")
         self.root = root
         self.token = token
 
@@ -110,6 +112,18 @@ class Broker:
         self.server = None
 
     def dispatch(self, action, params, identity, role=None):
+        if action in ("message_get", "operator_reply"):
+            if not isinstance(params, dict):
+                raise PolicyError("Message operation requires a parameter object")
+            if action == "message_get":
+                if role != "operator" or identity != "operator" or set(params) != {"message"}:
+                    raise PolicyError("message_get requires operator identity and exactly message")
+                canonical_uuid(params["message"], "message")
+                return self.store.message_get(params["message"], identity=identity, role=role)
+            if role != "agent" or not isinstance(identity, str) or identity == "operator" or set(params) != {"message", "body", "request_id"}:
+                raise PolicyError("operator_reply requires agent identity and exactly message, body, request_id")
+            body = operator_reply_input(params["message"], params["body"], params["request_id"])
+            return self.store.operator_reply(params["message"], body, params["request_id"], identity=identity, role=role)
         if role is None:
             role = "operator" if identity == "operator" else "agent"
         if not isinstance(action, str) or not isinstance(params, dict):
@@ -151,7 +165,9 @@ class Broker:
             self.store.set_external_focus(params["session"], None)
             return True
         if action == "ping":
-            return {"running": True, "version": "1.4.0", "build": BUILD}
+            return {"running": True, "version": "1.4.1", "build": BUILD,
+                    "capabilities": ["message_get", "operator_reply"],
+                    "limits": {"message_max_chars": 16000, "max_rpc_bytes": 65536}}
         if action == "terminal_appearance":
             from .appearance import validate
             if "value" in params:
@@ -190,8 +206,16 @@ class Broker:
             cwd = str(Path(params["cwd"]).resolve())
             if not Path(cwd).is_dir():
                 raise PolicyError("Project directory does not exist")
-            key = self.store.upsert_session(params["provider"], native_id, params["name"], cwd)
-            self.store.session(key)  # Reject re-registering a permanently deleted identity.
+            name = params["name"].strip()
+            if not name or len(name) > 160:
+                raise PolicyError("Name must contain 1–160 characters")
+            key = params["provider"] + ":" + native_id
+            try:
+                self.store.session(key)
+            except PolicyError:
+                key = self.store.upsert_session(params["provider"], native_id, name, cwd)
+                self.store.session(key)  # A deleted identity cannot be registered again.
+            self.store.update_session(key, name=name, cwd=cwd)
             return key
         if action == "delete_session":
             if params.get("confirmed") is not True:
@@ -211,8 +235,10 @@ class Broker:
         if action == "new":
             provider, cwd = params["provider"], str(Path(params["cwd"]).resolve())
             with self.launch_lock:
-                native_id = create_session(provider, cwd)
+                native_id = create_session(provider, cwd, name=params.get("name"))
                 key = self.store.upsert_session(provider, native_id, params.get("name") or Path(cwd).name, cwd)
+                if params.get("name"):
+                    self.store.update_session(key, name=params["name"])
                 self.launch(key, new=(provider == "claude"))
             return key
         if action == "resume":
@@ -722,22 +748,46 @@ class Broker:
         try:
             sessions, warning = discover_claude(shutil.which("claude"))
             self.provider_warnings["claude"] = warning
+            seen = set()
             for session in sessions:
+                seen.add("claude:" + session["native_id"])
                 previous = next((s for s in self.store.sessions() if s["id"] == "claude:" + session["native_id"]), None)
-                if previous and previous["managed"] and session["status"] == "unknown":
-                    runtime = self.store.get_setting("claude_runtime:" + previous["id"], {})
-                    if previous["heartbeat"] and time.time() - previous["heartbeat"] < 20 and runtime:
-                        session.pop("status", None)
-                        session.pop("latest", None)
+                runtime = self.fresh_claude_hook(previous) if previous and session["status"] == "unknown" else None
+                if runtime:
+                    session["status"] = runtime.get("status", previous["status"])
+                    session["latest"] = runtime.get("latest", previous["latest"])
                 self.store.upsert_session(**session)
+            self.reconcile_claude(seen, warning)
             total += len(sessions)
             succeeded = succeeded or bool(sessions) or bool(shutil.which("claude"))
-        except (OSError, RuntimeError, ValueError) as exc:
+        except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
             failures.append("Claude: " + str(exc))
+            self.provider_warnings["claude"] = "Claude live discovery unavailable: " + str(exc)
+            self.reconcile_claude(set(), self.provider_warnings["claude"])
         self.refresh_error = " · ".join(failures)
         if not succeeded and failures:
             raise PolicyError(self.refresh_error)
         return total
+
+    def fresh_claude_hook(self, session):
+        runtime = self.store.get_setting("claude_runtime:" + session["id"], {})
+        return (session["managed"] and session["heartbeat"]
+                and 0 <= time.time() - session["heartbeat"] < 20 and runtime)
+
+    def reconcile_claude(self, seen, warning):
+        for session in self.store.sessions():
+            if (session["provider"] != "claude" or session["id"] in seen
+                    or session["status"] not in {"working", "waiting", "idle"}):
+                continue
+            runtime = self.fresh_claude_hook(session)
+            if runtime:
+                self.store.update_session(session["id"], status=runtime.get("status", session["status"]),
+                    latest=runtime.get("latest", "Managed Claude hook · helper connected"))
+                continue
+            status = "unknown" if warning else "disconnected"
+            reason = "Live discovery unavailable" if warning else "Absent from fresh Claude discovery"
+            checked = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
+            self.store.update_session(session["id"], status=status, latest=f"{reason} · checked {checked}")
 
     def check_receipts(self):
         sessions = sorted((s for s in self.store.sessions() if s["provider"] == "codex"), key=lambda s: s["id"])
@@ -845,7 +895,7 @@ def handler_for(broker):
                 allowed = ACTIVITY_OPERATOR_ACTIONS if role == "operator" else ACTIVITY_AGENT_ACTIONS if role in ("agent", "activity") else ()
                 limit = activity_request_limit(broker.activities.policy()) if action_hint in allowed else 65536
                 if not 0 < length <= limit:
-                    raise PolicyError("Invalid request size")
+                    raise PolicyError(f"RPC request size must be 1–{limit} bytes including JSON framing; retain the original draft")
                 data = json.loads(self.rfile.read(length))
                 if not isinstance(data, dict):
                     raise PolicyError("RPC request must be an object")

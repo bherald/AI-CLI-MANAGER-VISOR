@@ -516,7 +516,7 @@ class Window(QMainWindow):
         query, provider = self.search.text().casefold(), self.filter.currentText()
         sessions = self.snapshot["sessions"]
         labels = self.session_labels()
-        visible = [s for s in sessions if query in (s["name"] + " " + s.get("description", "") + " " + s["cwd"] + " " + s["native_id"]).casefold()
+        visible = [s for s in sessions if query in (s["name"] + " " + s.get("provider_name", "") + " " + s.get("description", "") + " " + s["cwd"] + " " + s["native_id"]).casefold()
                    and (provider == "All providers" or s["provider"] == provider)
                    and (not self.open_only.isChecked() or self.is_open(s))]
         self.sessions.setSortingEnabled(False)
@@ -535,7 +535,10 @@ class Window(QMainWindow):
                 latest += " · External window linked for Focus; check its selected tab."
             for column, text in enumerate([labels[key], session["provider"], status, latest]):
                 item = SessionItem(str(text).replace("\n", " "))
-                item.setToolTip(f"{session['name']}\n{description}\n{session['cwd']}\n{key}" if column == 0 else (description + "\nLatest: " + session["latest"] if column == 3 and description else str(text)))
+                provider_name = session.get("provider_name", "")
+                title_detail = ("\nProvider title: " + provider_name
+                                if provider_name and provider_name != session["name"] else "")
+                item.setToolTip(f"{session['name']}{title_detail}\n{description}\n{session['cwd']}\n{key}" if column == 0 else (description + "\nLatest: " + session["latest"] if column == 3 and description else str(text)))
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 if column == 2:
                     item.setForeground(QColor("#f2bc48" if text == "waiting" else "#00d2d8" if text == "working" else "#a9bccd"))

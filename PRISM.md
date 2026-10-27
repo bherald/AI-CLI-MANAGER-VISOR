@@ -4,6 +4,18 @@ Prism is a shared chalkboard beside your Codex and Claude conversations. A windo
 
 In VISOR, choose **Prism** to reopen a board. Drag card title bars, resize their corners, type into a text card or draw on a sketch. **Save changes** shares your edit. **Clear view** and closing a window preserve the board, drafts and session work. **Export picture** saves the visible workspace as PNG.
 
+The header is **Title - Updated: MM/DD/YYYY hh:mm am/pm** in the system timezone,
+including daylight-saving rules. Shared revisions carry a broker-assigned update
+timestamp; older documents and local previews fall back to the source file's
+modification time. Opening or repairing a timestamped revision does not change its
+displayed update time. Hover the heading for owner/revision/contributor details.
+
+Expand **Actions** for Open topic, Show all cards, Tile cards, Reset layout,
+Clear view, Save layout and Export picture. The compact toolbar folds overflow
+actions into its extension menu at narrow widths. Its expanded/collapsed state
+is saved with the local layout. The footer is one concise line in 8pt type;
+hover it for the full status or error. Card titles and editing controls are unchanged.
+
 ## Close, reopen or delete a saved board
 
 Closing a Prism window records your dismissal. Content can continue to update quietly, including after restarting VISOR. A session can request reopening; that request appears in the Prism chooser without reopening the window. Choose **Prism** to reopen it yourself. An authenticated operator control request can also reopen it. Showing a window is not proof that you read its content.

@@ -12,7 +12,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("--archive", type=Path, default=root / "dist" / "visor-1.4.0-windows-amd64.zip")
+parser.add_argument("--archive", type=Path, default=root / "dist" / "visor-1.4.1-windows-amd64.zip")
 archive = parser.parse_args().archive.resolve()
 with archive.open("rb") as stream:
     assert hashlib.file_digest(stream, "sha256").hexdigest() == archive.with_suffix(".zip.sha256").read_text().split()[0]

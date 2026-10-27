@@ -48,6 +48,43 @@ class CodexStartupCase(unittest.TestCase):
             self.assertEqual(create_session("codex", directory), "exact")
         ensure.assert_called_once()
 
+    @patch("visor.providers.provider_command", return_value=["codex"])
+    @patch("visor.providers.ensure_codex_daemon")
+    def test_new_thread_is_named_then_verified_after_creator_closes(self, *_):
+        order = Mock()
+        creator, verifier = Mock(), Mock()
+        creator.call.side_effect = [{"thread": {"id": "exact", "sessionId": "different-tree"}}, {}]
+        verifier.call.return_value = {"thread": {"id": "exact"}}
+        first, second = Mock(), Mock()
+        first.__enter__ = Mock(return_value=creator)
+        first.__exit__ = Mock()
+        second.__enter__ = Mock(return_value=verifier)
+        second.__exit__ = Mock()
+        order.attach_mock(first.__exit__, "creator_closed")
+        order.attach_mock(verifier.call, "second_client")
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("visor.providers.CodexRPC", side_effect=[first, second]):
+            self.assertEqual(create_session("codex", directory, name="Requested title"), "exact")
+            self.assertEqual(creator.call.call_args_list[0].args,
+                ("thread/start", {"cwd": str(Path(directory).resolve()), "ephemeral": False}))
+        creator.call.assert_any_call("thread/name/set", {"threadId": "exact", "name": "Requested title"})
+        verifier.call.assert_called_once_with("thread/resume", {"threadId": "exact", "excludeTurns": True})
+        self.assertEqual([call[0] for call in order.mock_calls], ["creator_closed", "second_client"])
+
+    @patch("visor.providers.provider_command", return_value=["codex"])
+    @patch("visor.providers.ensure_codex_daemon")
+    def test_unresumable_new_thread_has_actionable_error_and_no_terminal_or_registry(self, *_):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = Broker(Path(directory))
+            with patch("visor.providers.CodexRPC") as rpc, patch("visor.broker.terminal_launch") as launch:
+                rpc.return_value.__enter__.return_value.call.side_effect = [
+                    {"thread": {"id": "exact"}}, {}, ProviderUnavailable("no rollout found")]
+                with self.assertRaisesRegex(ProviderUnavailable, "not confirmed resumable.*No terminal was opened"):
+                    broker.dispatch("new", {"provider": "codex", "cwd": directory}, "operator")
+                launch.assert_not_called()
+            self.assertEqual(broker.store.sessions(), [])
+            self.assertEqual(list(Path(directory).glob("launch-*.json")), [])
+
     def test_resume_failure_does_not_create_ticket_or_claim_terminal(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

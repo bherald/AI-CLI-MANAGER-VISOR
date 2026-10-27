@@ -73,6 +73,22 @@ class ActivityStoreTests(unittest.TestCase):
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.assertTrue(ACTIVITY_TABLES <= tables)
 
+    def test_updated_time_is_assigned_by_broker_and_stable_across_repair_and_retries(self):
+        doc = document()
+        doc['updated_at'] = '1900-01-01T00:00:00+00:00'
+        with patch('visor.activity_store._stamp', return_value='2026-10-26T18:05:00+00:00'):
+            self.service.publish(self.a, doc, 'timed-publish')
+        current = self.service.get(None, 'board')['document']
+        self.assertEqual(current['updated_at'], '2026-10-26T18:05:00+00:00')
+        self.service.publish(self.a, doc, 'timed-publish')
+        self.assertEqual(self.service.get(None, 'board')['document'], current)
+        with patch('visor.activity_store._stamp', return_value='2026-10-26T19:10:00+00:00'):
+            self.service.edit('board', 'text', 1, '<p>Updated</p>', 'timed-edit')
+        edited = self.service.get(None, 'board')['document']
+        self.assertEqual(edited['updated_at'], '2026-10-26T19:10:00+00:00')
+        self.service.edit('board', 'text', 1, '<p>Updated</p>', 'timed-edit')
+        self.assertEqual(self.service.get(None, 'board')['document'], edited)
+
     def test_revisions_dedupe_and_concurrency(self):
         first = self.publish()
         self.assertEqual(first, self.publish())

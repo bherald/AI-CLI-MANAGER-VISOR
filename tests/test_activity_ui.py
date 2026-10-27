@@ -3,7 +3,9 @@ import copy
 import json
 import os
 import tempfile
+import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -73,6 +75,62 @@ class ActivityUICase(unittest.TestCase):
         self.write(window.source, document)
         window.poll_document()
         window.layout_timer.stop()
+
+    def test_compact_header_uses_revision_time_not_open_time(self):
+        document = self.document()
+        document["updated_at"] = "2026-07-10T18:05:00+00:00"
+        local = datetime.fromisoformat(document["updated_at"]).astimezone()
+        expected = "Fixture activity - Updated: " + local.strftime("%m/%d/%Y  %I:%M ") + ("am" if local.hour < 12 else "pm")
+        window = self.open(document)
+        self.assertEqual(window.heading.text(), expected)
+        self.assertEqual(window.windowTitle(), expected)
+        self.assertTrue(window.metadata.isHidden())
+        self.assertIs(window.metadata.parentWidget(), window.centralWidget())
+        self.assertIn("Fixture session", window.heading.toolTip())
+        window.apply_document(document)
+        self.assertEqual(window.heading.text(), expected)
+        document["revision"] = 2
+        document["updated_at"] = "2026-07-11T18:05:00+00:00"
+        self.update(window, document)
+        self.assertNotEqual(window.heading.text(), expected)
+
+    @unittest.skipUnless(hasattr(time, "tzset"), "POSIX timezone switching")
+    def test_header_converts_timestamp_to_system_timezone_including_dst(self):
+        try:
+            with patch.dict(os.environ, {"TZ": "America/New_York"}):
+                time.tzset()
+                doc = self.document()
+                doc["updated_at"] = "2026-07-10T18:05:00+00:00"
+                window = self.open(doc)
+                self.assertEqual(window.heading.text(), "Fixture activity - Updated: 07/10/2026  02:05 pm")
+                doc["updated_at"] = "2026-01-10T05:05:00+00:00"
+                window.apply_document(doc)
+                self.assertEqual(window.heading.text(), "Fixture activity - Updated: 01/10/2026  12:05 am")
+        finally:
+            time.tzset()
+
+    def test_actions_collapse_and_single_line_footer_leave_body_space(self):
+        window = self.open()
+        window.resize(520, 400)
+        self.app.processEvents()
+        self.assertTrue(window.actions_bar.isHidden())
+        collapsed_height = window.area.height()
+        window.actions_toggle.click()
+        self.app.processEvents()
+        self.assertTrue(window.actions_bar.isVisible())
+        self.assertLess(window.actions_bar.height(), 40)
+        self.assertLess(window.area.height(), collapsed_height)
+        self.assertEqual(len(window.actions_bar.actions()), 7)
+        window.save_layout()
+        self.assertTrue(json.loads(window.layout_path.read_text())["actions_expanded"])
+        window.actions_toggle.click()
+        self.app.processEvents()
+        self.assertEqual(window.area.height(), collapsed_height)
+        window.status.setText("Update unavailable\nlast accepted content preserved")
+        self.assertNotIn("\n", window.status.text())
+        self.assertEqual(window.status.font().pointSizeF(), 8)
+        self.assertLess(window.status.height(), 25)
+        self.assertFalse(window.status.wordWrap())
 
     def test_watched_update_preserves_geometry_draft_and_choice(self):
         window = self.open()
@@ -224,6 +282,8 @@ class ActivityUICase(unittest.TestCase):
         for label in (window.heading, window.metadata, window.cards["question"].content,
                       window.cards["question"].caption):
             self.assertEqual(label.textFormat(), Qt.TextFormat.PlainText)
+        self.assertNotIn("<i>", window.heading.toolTip())
+        self.assertIn("&lt;i&gt;Session&lt;/i&gt;", window.heading.toolTip())
 
     def test_invalid_colspan_does_not_interrupt_content_update(self):
         for value in ("9" * 5000, "²"):

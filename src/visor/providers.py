@@ -104,7 +104,7 @@ class CodexRPC:
         try:
             if not self.ready.wait(10) or self.protocol.state != OPEN:
                 raise ProviderUnavailable(self.connection_error or "Codex control socket handshake timed out")
-            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.4.0"},
+            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.4.1"},
                                      "capabilities": {"experimentalApi": experimental}})
             self.send({"method": "initialized", "params": {}})
         except Exception:
@@ -229,7 +229,7 @@ def discover_codex():
     return sessions
 
 
-def create_session(provider, cwd):
+def create_session(provider, cwd, name=None):
     provider_command(provider)
     if not Path(cwd).is_dir():
         raise ProviderUnavailable("Choose an existing project directory")
@@ -237,9 +237,27 @@ def create_session(provider, cwd):
         return str(uuid.uuid4())
     ensure_codex_daemon()
     with CodexRPC() as rpc:
-        result = rpc.call("thread/start", {"cwd": str(Path(cwd).resolve())})
-    # thread.id, not sessionId (which may name a shared session tree).
-    return result["thread"]["id"]
+        result = rpc.call("thread/start", {"cwd": str(Path(cwd).resolve()), "ephemeral": False})
+        # thread.id, not sessionId (which may name a shared session tree).
+        native_id = result["thread"]["id"]
+        try:
+            # In Codex 0.164.0 an untouched thread has no resumable rollout yet.
+            # Setting the requested initial title through the supported API persists
+            # it without a model turn, synthetic prompt, or provider database write.
+            rpc.call("thread/name/set", {"threadId": native_id, "name": name or Path(cwd).name or "New session"})
+        except (OSError, ProviderUnavailable) as exc:
+            raise ProviderUnavailable(f"Codex created thread {native_id}, but could not save its initial title. "
+                                      "No terminal was opened; inspect the thread before retrying. " + str(exc)) from exc
+    try:
+        # Prove the handoff after closing the creator, exactly as the TUI must do.
+        with CodexRPC() as verifier:
+            resumed = verifier.call("thread/resume", {"threadId": native_id, "excludeTurns": True})
+        if resumed.get("thread", {}).get("id") != native_id:
+            raise ProviderUnavailable("Codex returned a different thread identity")
+    except (OSError, ProviderUnavailable) as exc:
+        raise ProviderUnavailable(f"Codex thread {native_id} is not confirmed resumable by a second client. "
+                                  "No terminal was opened; inspect the thread before retrying. " + str(exc)) from exc
+    return native_id
 
 
 def ensure_codex_daemon():

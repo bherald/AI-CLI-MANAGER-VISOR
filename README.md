@@ -2,7 +2,7 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. Use the supervisor to find and resume exact sessions, bring terminals forward, connect selected agents, and follow their coordination messages through delivery, acknowledgment and completion. Session communication and its local message history are a core part of VISOR, alongside terminal management and graceful wrap-up.
 
-**1.4.0 beta candidate — Prism shared workspaces.** This source prepares the next evaluation release; use the release page for published downloads. Prism has local Linux/X11 checks. Prior Windows/Linux build and desktop evidence does not establish interactive Prism acceptance. **macOS is experimental: hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**1.4.1 beta — compact Prism and discovery fixes.** See the [versioned release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.1) for downloads, checksums and exact platform build results. The local Linux package passed extracted-package checks and is linked to the desktop shortcut; see the [candidate evidence](docs/RELEASE_1_4_1.md) for delivery results. The release remains an evaluation beta. Prior Windows/Linux build and desktop evidence does not establish interactive acceptance of this candidate. **macOS is experimental: earlier hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
 
 Published packages are listed under [GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases). Exit an older supervisor before launching a new download; extract and keep the complete package directory together. The title and **About / diagnostics** identify the running version and executable.
 
@@ -16,9 +16,9 @@ VISOR keeps sessions, connections and coordination messages together. Prism give
 
 *Main VISOR window with illustrative sessions and messages. No live sessions are shown.*
 
-![Prism sample board with notes, a picture, chart, diagram, sketch and a question](docs/images/prism-workspace.png)
+![Prism source preview with compact header, collapsed Actions, notes, drawing, picture and question](docs/images/prism-workspace.png)
 
-*Prism local preview: a sample solar workshop planned with six movable cards. All content is illustrative; the scores are examples, not measured results.*
+*Prism 1.4.1 source preview: compact header, collapsed Actions and a single-line footer. All card content is illustrative; no live sessions are shown.*
 
 ## What you can do
 
@@ -266,3 +266,15 @@ If this work has helped you, you may leave an [optional one-time tip](https://gi
 ## Prism windows
 
 Use shared native windows for notes, pictures, diagrams, charts, questions and freehand drawings. Codex and Claude sessions can contribute through scoped CLI/MCP access. See [Prism windows](PRISM.md) for setup, sharing and recovery.
+
+The compact header shows only **Title - Updated: MM/DD/YYYY hh:mm am/pm**, using
+the system timezone. **Actions** expands a short toolbar; collapse it to give the
+cards more space. The footer uses one concise line in 8pt type. Owner, revision
+and contributor details remain available in the heading tooltip.
+
+Provider titles refresh independently of deliberate VISOR aliases. Search finds
+either name; hover the session name to see a differing provider title. Registering
+an existing UUID with a requested name applies that name as an alias. Legacy names
+are preserved as possible aliases because their original source was not recorded.
+Claude discovery clears stale live-status claims while preserving saved history
+and fresh managed hook evidence; unavailable discovery is shown as unknown.

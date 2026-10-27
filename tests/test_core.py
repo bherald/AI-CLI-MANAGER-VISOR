@@ -573,7 +573,7 @@ class MCPCase(unittest.TestCase):
     def test_no_operator_tools(self):
         result = handle({"method": "tools/list"}, None)
         self.assertEqual({t["name"] for t in result["tools"]}, {
-            "send", "receive", "acknowledge", "peers", "activity_list", "activity_get",
+            "send", "receive", "acknowledge", "operator_reply", "peers", "activity_list", "activity_get",
             "activity_publish", "activity_control", "activity_asset", "activity_replies",
             "activity_acknowledge", "activity_share"})
 

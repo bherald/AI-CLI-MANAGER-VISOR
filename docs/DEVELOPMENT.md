@@ -135,3 +135,64 @@ Unresolved messages and deduplication records remain; no provider transcript is 
 credential patterns and sensitive filenames, printing locations without secret values.
 `python scripts/source_bundle.py` additionally builds a source handoff without `.git` or ignored data.
 Review [RELEASE_PROCESS.md](RELEASE_PROCESS.md) before the eventual bherald repository.
+
+## Operator-reply protocol and existing-session fallback
+
+The fixed operator `message_get` and agent `operator_reply` contract is documented
+in [ARCHITECTURE.md](ARCHITECTURE.md). Source tests use temporary stores and an
+in-memory invocation of the real HTTP handler; they never address a live provider.
+Run the focused source tests with the existing environment:
+
+```sh
+PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_operator*.py'
+```
+
+Both ordinary loopback RPC requests and non-Prism MCP frames have a 65536-byte
+limit, including the complete serialized JSON envelope (and the MCP newline).
+The 16000-code-point body bound is separate: a literal UTF-8 body of 16000 emoji
+can fit, whereas ASCII-escaped JSON for that same body exceeds the byte limit.
+Clients must measure the bytes of their actual serialized request; neither a
+JavaScript UTF-16 length nor a smaller guessed character limit is equivalent.
+Oversized framing is explicitly rejected before the operation, with the original
+draft retained. No truncation, implicit content rewrite, larger global limit or
+new request identity is an acceptable recovery. Unknown outcomes require the exact
+same parent, canonical body and request UUID; a retry cannot replace an accepted
+final reply.
+
+A currently running recipient without the new tool may use the updated installed
+MCP executable with **its own existing agent credential file**:
+
+```text
+visor-console --mcp --credential <this-session-existing-agent-credential.json>
+```
+
+Use that invocation through the provider's supported MCP attachment/discovery
+route, or its ordinary stdio initialization/tools/list/tools/call exchange. Do not
+restart a conversation to attach it. The file must already belong to this exact
+recipient and authenticate as role `agent`; helper or activity files cannot reply.
+MCP passes its explicit token to Client and never uses the broker operator token.
+No credential minting, copying, borrowing or logging is part of this fallback.
+
+An already authorized scoped Python caller can use the same identity explicitly:
+
+```python
+import json
+from pathlib import Path
+from visor.broker import Client
+
+config = json.loads(own_existing_agent_credential.read_text(encoding="utf-8"))
+if not isinstance(config, dict) or not isinstance(config.get("token"), str) or not config["token"].strip():
+    raise ValueError("Existing agent credential is missing or invalid; hold the reply")
+client = Client(Path(config["root"]), token=config["token"])
+reply = client.call("operator_reply", message=parent_message_id,
+                    body=pinned_canonical_body, request_id=pinned_request_uuid)
+```
+
+Keep the token in memory. Never substitute `Client(root)`: omitting the explicit
+token selects the local operator credential and violates this fallback's identity.
+The installed broker must support the operation; missing tool/broker capability
+means hold the draft, not use a broader send or operator credential. Tool inventory
+alone does not establish running-recipient availability. The designated runtime
+owner must separately prove supported attachment and one bounded real recipient
+ACK plus explicit reply before claiming live two-way acceptance. Source tests and
+prepared commands do not claim that runtime step has happened.

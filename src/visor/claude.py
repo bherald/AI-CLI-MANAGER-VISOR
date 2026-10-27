@@ -148,7 +148,7 @@ def discover(exe=None, config_dir=None):
         item = transcript_metadata(path, projects)
         if item:
             sessions[item["native_id"]] = item
-    warning = ""
+    warning = "" if exe else "Claude executable unavailable; saved history remains available"
     if exe:
         # Older CLIs can treat an unknown subcommand as a prompt. Version-gate the
         # documented roster command instead of probing it on an old installation.

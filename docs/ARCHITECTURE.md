@@ -56,7 +56,7 @@ Helper credentials are distinct from agent credentials: only helpers report hear
 process exit, and helpers cannot send messages. These API roles do not create a security
 boundary against arbitrary file reads by other processes running under the same OS account.
 
-`mcp.py` offers only peers, send, receive, and acknowledge. Sender identity comes from the
+`mcp.py` offers peers, send, receive, acknowledge, the typed operator_reply described below, and scoped Prism activity tools. Sender identity comes from the
 credential. A session can have multiple approved peers; no implicit/transitive connection
 exists. Messages remain queued/held until delivery, with explicit acknowledgment/completion.
 Crashes during sending become delivery_unknown and are not automatically retried. MCP delivery
@@ -89,3 +89,58 @@ messages. Closed sessions are not included in new wrap-up requests.
 The operator-only `delete_session` request requires `confirmed: true`. Launch and delivery locks serialize it with terminal launches and message claims. Codex descendant discovery includes active and archived records and verifies parent ancestry locally before taking action. Each known target's linked managed window is verified and closed without a graceful agent request; Windows additionally waits for its pinned helper process to retire. The shared terminal host and Codex daemon are never killed. Missing/ambiguous live associations or a close timeout abort provider deletion.
 
 Provider history deletion precedes registry cleanup: Codex uses `thread/delete`; Claude removes only canonical-UUID conversation transcripts and session artifact directories within its resolved configuration root. Every recursive target is checked before mutation. Provider/close errors preserve the VISOR row for retry; a terminal may already have closed before a later failure. After success, SQLite removes related pairs, credentials, messages, runtime/layout/shutdown entries and the session row. A separate identity-only tombstone prevents an in-flight discovery from re-inserting the conversation. There is no restore action for permanent deletion. This does not erase project source files or promise cloud/shared-log/backup removal.
+
+## Human operator messages and final replies
+
+Operator `ping` advertises `capabilities: ["message_get", "operator_reply"]` and
+`limits: {"message_max_chars": 16000, "max_rpc_bytes": 65536}`. A browser facade
+must check these before exposing this communication workflow. An old/unavailable
+broker is a capability hold, not permission to infer receipts from `snapshot`.
+The snapshot contains only the latest 200 VISOR messages globally; it is partial
+history, separate from provider conversations.
+
+`message_get {message}` is operator-only and returns the exact raw VISOR message
+with `reply: null` or its attached typed reply. The trusted operator facade must
+verify its authenticated user's session/event authorization and emit a filtered
+DTO; raw message fields include internal detail and deduplication data. Deleted,
+cleared and missing events are rejected. Agent, helper and Prism-only credentials
+cannot perform this lookup.
+
+`operator_reply {message, body, request_id}` is agent-only. The authenticated agent
+must be the original recipient of a regular `sender=operator`, `origin=operator`,
+`kind=message` event. Wrap-up and agent-origin messages are ineligible. The parent
+must be sending, delivered, delivery_unknown, acknowledged or completed; allowing
+sending covers a recipient responding before the transport receipt arrives. The
+reply's fixed destination is the human operator. No synthetic operator session,
+peer connection, participation or master-policy bypass is added to agent send.
+
+One immutable final reply is stored under `settings["operator_reply:" + parent_id]`
+in the existing SQLite database, without adding a table or message column. The
+record has `schema="visor.operator_reply.v1"`, `id`, `parent_message_id`,
+`parent_sha256`, authenticated `sender`, `recipient="operator"`, canonical `body`,
+`request_id`, and `created` (epoch seconds). The reply operation returns this same
+record. Parent/request/reply IDs are canonical lower-case hyphenated UUIDs. Body
+validation uses Python `str.strip()`, 1–16000 Unicode code points, and strict UTF-8;
+U+001C through U+001F are stripped, whereas U+FEFF is retained. Mutable transport
+state is excluded from the parent hash: SHA-256 covers UTF-8 JSON of precisely
+id/sender/recipient/origin/kind/body, sorted keys, compact separators, unescaped
+Unicode. Parent and reply are read in one SQLite snapshot. An immediate write
+transaction checks binding and uses INSERT once; retrying the same parent, sender,
+request and canonical body returns the prior record. Any different final reply
+conflicts. Subsequent conversation requires another operator message.
+
+Posting does not acknowledge reading, report completion, approve action or prove
+execution. Existing `acknowledge` and `completed` semantics remain independent.
+The `operator_reply:` namespace is rejected by all three generic settings helpers.
+Only typed bound-SQL methods read/write it; snapshot and configuration routes do
+not expose it. Malformed records, changed parent hashes and orphan references fail
+closed on typed reads and retries.
+
+Message deletion, session deletion and completed/failed retention clearing remove
+attached reply content atomically with the parent lifecycle change. Pending and
+uncertain deliveries are retained. Private SQLite backups include replies and their
+parents; restore invalidates credentials and retains binding checks before reads.
+Clearing live content does not erase retained backups. Supported rollback disables
+the new browser capabilities while retaining this forward-compatible Store cleanup.
+An arbitrary older Store would not know these keys; downgrading it requires an
+explicit reply-preservation and retention plan before resuming operations.

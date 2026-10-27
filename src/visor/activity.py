@@ -8,6 +8,7 @@ import json
 import math
 import uuid
 from dataclasses import fields
+from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import ClassVar
@@ -40,6 +41,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QTextBrowser,
     QTextEdit,
+    QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -61,8 +64,11 @@ QWidget#prismCard { background: #17232d; }
 QLabel { background: transparent; color: #d4dee7; }
 QMainWindow, QWidget#activityRoot { background: #111b24; }
 QLabel#eyebrow { color: #85c4c5; font-size: 12px; font-weight: bold; }
-QLabel#heading { color: #d4dee7; font-size: 26px; font-weight: bold; }
+QLabel#heading { color: #d4dee7; font-size: 14px; font-weight: bold; }
 QLabel#metadata { color: #a5b5c3; font-size: 13px; }
+QLabel#prismStatus { color: #a5b5c3; font-size: 8pt; }
+QToolBar { border: 0; spacing: 3px; padding: 0; }
+QToolButton { padding: 2px 5px; border: 1px solid #465b69; border-radius: 3px; }
 QPushButton { background: #223440; color: #d4dee7; border: 1px solid #465b69; border-radius: 5px; padding: 7px 10px; }
 QPushButton:hover { background: #2b4350; border-color: #739a9e; }
 QPushButton#primary { background: #31595c; color: #e0e9ed; border: 1px solid #729b9e; }
@@ -578,6 +584,12 @@ class Card(QMdiSubWindow):
         self.board.schedule_layout_save()
 
 
+class SingleLineStatus(QLabel):
+    def setText(self, text):
+        self.setToolTip("<qt>" + html.escape(text).replace("\n", "<br>") + "</qt>")
+        super().setText(" ".join(text.split()))
+
+
 class ActivityWindow(QMainWindow):
     def __init__(self, source, state_dir, policy=None, submit=None, on_view=None):
         super().__init__()
@@ -619,39 +631,47 @@ class ActivityWindow(QMainWindow):
         root = QWidget()
         root.setObjectName("activityRoot")
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(20, 14, 20, 12)
-        eyebrow = QLabel("PRISM WINDOW  /  SHARED WORKSPACE" if submit else "PRISM WINDOW  /  LOCAL PREVIEW")
-        eyebrow.setObjectName("eyebrow")
-        outer.addWidget(eyebrow)
+        outer.setContentsMargins(8, 5, 8, 4)
+        outer.setSpacing(3)
         self.heading = QLabel()
         self.heading.setTextFormat(Qt.TextFormat.PlainText)
         self.heading.setObjectName("heading")
+        self.heading.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         outer.addWidget(self.heading)
-        self.metadata = QLabel()
+        self.metadata = QLabel(root)
         self.metadata.setTextFormat(Qt.TextFormat.PlainText)
         self.metadata.setObjectName("metadata")
         self.metadata.setWordWrap(True)
-        outer.addWidget(self.metadata)
-        controls = QHBoxLayout()
+        self.metadata.hide()  # Retain provenance in the heading tooltip, not the header.
+        self.actions_toggle = QToolButton()
+        self.actions_toggle.setText("Actions")
+        self.actions_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.actions_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.actions_toggle.setCheckable(True)
+        self.actions_toggle.setAccessibleName("Show or hide Prism actions")
+        outer.addWidget(self.actions_toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        self.actions_bar = QToolBar("Prism actions")
+        self.actions_bar.setMovable(False)
+        self.actions_bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         for label, callback in [("Open topic…", self.open_topic), ("Show all cards", self.show_cards),
                                 ("Tile cards", self.tile_cards), ("Reset layout", self.reset_layout),
                                 ("Clear view", self.clear_view), ("Save layout", self.save_layout),
                                 ("Export picture…", self.export_picture)]:
-            b = QPushButton(label)
-            b.clicked.connect(callback)
-            controls.addWidget(b)
-        controls.addStretch()
-        outer.addLayout(controls)
+            self.actions_bar.addAction(label, callback)
+        outer.addWidget(self.actions_bar)
+        self.actions_bar.hide()
+        self.actions_toggle.toggled.connect(self.toggle_actions)
         self.area = QMdiArea()
         self.area.setBackground(QColor("#0e1820"))
         self.area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.area.setActivationOrder(QMdiArea.WindowOrder.CreationOrder)
         outer.addWidget(self.area, 1)
-        self.status = QLabel()
+        self.status = SingleLineStatus()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
-        self.status.setObjectName("metadata")
-        self.status.setWordWrap(True)
+        self.status.setObjectName("prismStatus")
+        self.status.setWordWrap(False)
+        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         outer.addWidget(self.status)
         self.setCentralWidget(root)
         self.apply_document(self.document)
@@ -667,7 +687,12 @@ class ActivityWindow(QMainWindow):
         if self.submit:
             self.receipt_timer.start()
         self.capture_signature()
-        self.status.setText("Live local file · drag card title bars, resize corners, select text and answer questions. Layout stays yours.")
+        self.status.setText("Ready · drag or resize cards; changes require Save.")
+
+    def toggle_actions(self, expanded):
+        self.actions_bar.setVisible(expanded)
+        self.actions_toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        self.schedule_layout_save()
 
     @property
     def layout_path(self):
@@ -682,8 +707,17 @@ class ActivityWindow(QMainWindow):
 
     def apply_document(self, document):
         self.document = document
-        self.heading.setText(document["title"])
-        self.setWindowTitle(document["title"] + " · Prism Window")
+        try:
+            updated = datetime.fromisoformat(document.get("updated_at", ""))
+            if updated.tzinfo is None:
+                raise ValueError("Update timestamp needs a timezone")
+        except (TypeError, ValueError):
+            updated = datetime.fromtimestamp(self.source.stat().st_mtime).astimezone()
+        local = updated.astimezone()
+        stamp = local.strftime("%m/%d/%Y  %I:%M ") + ("am" if local.hour < 12 else "pm")
+        title = " ".join(document["title"].split()) + " - Updated: " + stamp
+        self.heading.setText(title)
+        self.setWindowTitle(title)
         linked = document.get("session_link", {})
         session = linked.get("label", linked.get("id", "Local document"))
         self.metadata.setText(f"{session}  ·  revision {document['revision']}  ·  {document.get('parent_record', 'Working topic')}\n"
@@ -692,6 +726,7 @@ class ActivityWindow(QMainWindow):
             contributors = sorted(set(document.get("contributors", {}).values()))
             self.metadata.setText(f"Owner: {linked.get('id', session)} · revision {document['revision']} · {document.get('parent_record', 'Working topic')}\n"
                                   + "Contributors: " + ", ".join(contributors) + " · Last edit: " + document.get("last_editor", "session"))
+        self.heading.setToolTip("<qt>" + html.escape(self.metadata.text()).replace("\n", "<br>") + "</qt>")
         active = set()
         for i, data in enumerate(document["cards"]):
             key = data["id"]
@@ -725,7 +760,7 @@ class ActivityWindow(QMainWindow):
                     card.content.set_card(card.data)
             card.check_policy()
         if error:
-            self.status.setText("Prism content operations on hold: " + error + ". Drafts and layout are preserved.")
+            self.status.setText("On hold: " + error + " · drafts preserved.")
         else:
             self.signature = None
 
@@ -748,10 +783,10 @@ class ActivityWindow(QMainWindow):
             self.apply_document(candidate)
             self.signature = signature
             self.observe_view_later()
-            self.status.setText(f"Updated to revision {candidate['revision']} · your layout and answer drafts were preserved.")
+            self.status.setText(f"Updated · revision {candidate['revision']} · drafts preserved.")
             self.schedule_layout_save()
         except (OSError, ValueError, KeyError) as exc:
-            self.status.setText("Update unavailable · showing last accepted content: " + str(exc))
+            self.status.setText("Update unavailable · last accepted content: " + str(exc))
 
     def schedule_layout_save(self):
         if not self.loading and not self.retired:
@@ -774,6 +809,7 @@ class ActivityWindow(QMainWindow):
                     cards[key].update(draft=card.reply.toPlainText(), choice=card.choices.currentText(),
                                       prompt_hash=question_fingerprint(card.data), needs_review=card.question_changed)
             write_private(self.layout_path, {"board_id": self.document["id"], "cards": cards,
+                                             "actions_expanded": self.actions_toggle.isChecked(),
                                              "geometry": [self.x(), self.y(), self.width(), self.height()]})
         except (OSError, ValueError) as exc:
             self.status.setText("Layout not saved: " + str(exc))
@@ -783,6 +819,7 @@ class ActivityWindow(QMainWindow):
             saved = json.loads(self.layout_path.read_text())
             if not isinstance(saved, dict) or saved.get("board_id") != self.document["id"]:
                 return
+            self.actions_toggle.setChecked(saved.get("actions_expanded") is True)
             geometry = saved.get("geometry")
             if self.valid_geometry(geometry):
                 screen = QApplication.primaryScreen().availableGeometry()
@@ -872,7 +909,7 @@ class ActivityWindow(QMainWindow):
     def clear_view(self):
         for card in self.cards.values():
             card.hide()
-        self.status.setText("View cleared. Topic content, drafts and session work remain. Use Show all cards to restore.")
+        self.status.setText("View cleared · Actions → Show all cards to restore.")
         self.schedule_layout_save()
 
     def tile_cards(self):

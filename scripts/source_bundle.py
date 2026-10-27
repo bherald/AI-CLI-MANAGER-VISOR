@@ -15,13 +15,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--public", action="store_true", help="Exclude private planning history and concept art")
 args = parser.parse_args()
 private_files = {"docs/PLANNING_HISTORY.md", "docs/IMPLEMENTATION_PLAN.md",
-                 "docs/PUBLICATION_CHECKLIST.md", "ui-concept-v2.png"}
+                 "docs/PUBLICATION_CHECKLIST.md", "docs/RELEASE_CANDIDATE.md", "ui-concept-v2.png"}
 
 subprocess.run([sys.executable, str(root / "scripts/audit_public_repo.py")], cwd=root, check=True)
 files = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
                                 cwd=root).decode().split("\0")
 files = sorted(set(filter(None, files)) - (private_files if args.public else set()))
-output = root / "dist" / ("visor-source-1.4.0" + ("-public" if args.public else "") + ".tar.gz")
+output = root / "dist" / ("visor-source-1.4.1" + ("-public" if args.public else "") + ".tar.gz")
 output.parent.mkdir(exist_ok=True)
 with tarfile.open(output, "w:gz") as bundle:
     for name in files:

@@ -259,6 +259,18 @@ class UICase(unittest.TestCase):
                 result = self.window.nativeEvent(b"windows_generic_MSG", ctypes.addressof(message))
             self.assertEqual(result, (True, expected))
 
+    def test_current_provider_title_remains_searchable_under_an_alias(self):
+        self.window.snapshot = {"pairs": [], "messages": [], "sessions": [
+            {"id": "codex:a", "native_id": "a", "provider": "codex", "name": "My alias",
+             "provider_name": "Current provider title", "cwd": "/fixture", "status": "unknown",
+             "latest": "Saved", "participates": False, "heartbeat": None}]}
+        self.window.search.setText("Current provider title")
+        self.window.render_sessions()
+        self.assertEqual(self.window.sessions.rowCount(), 1)
+        item = self.window.sessions.item(0, 0)
+        self.assertEqual(item.text(), "My alias")
+        self.assertIn("Provider title: Current provider title", item.toolTip())
+
     def test_filters_single_rows_and_collapsible_communication(self):
         self.window.snapshot = {"pairs": [], "messages": [], "sessions": [
             {"id": "codex:a", "native_id": "a", "provider": "codex", "name": "Alpha", "cwd": "same/path",

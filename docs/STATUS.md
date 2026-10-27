@@ -1,6 +1,18 @@
 # Beta status and evidence
 
-Release: **1.3.1 beta 1**, build `2026-10-24-release-1.3.1`.
+Release: **1.4.1 beta**, tag `v1.4.1-beta.1`. See the
+[versioned release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.1)
+for exact hosted build results and package checksums.
+
+Source release: **1.4.1**, build `2026-10-26-prism-compact-discovery`.
+Compact Prism header/Actions/footer and GitHub #4/#5/#6 corrections are prepared
+in this checkout. Source verification and the isolated Codex 0.164.0 handoff
+experiment are recorded in [RELEASE_1_4_1.md](RELEASE_1_4_1.md).
+Local Linux 1.4.1 was built, verified after extraction, linked to the desktop
+shortcut and launched on 2026-10-27. The packaged supervisor and broker both
+report the prepared version/build. Prior installation folders were retained.
+Public source/release publication was approved on 2026-10-27. Native/package
+evidence from older releases does not certify this version.
 
 Local repair candidate: `2026-10-25-local-launch-recovery` (not a new public release).
 The Linux terminal launcher removes nested frozen-bundle library paths and reports

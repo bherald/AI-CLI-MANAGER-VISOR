@@ -15,6 +15,38 @@ class PolicyError(ValueError):
     pass
 
 
+OPERATOR_REPLY_PREFIX = "operator_reply:"
+OPERATOR_REPLY_SCHEMA = "visor.operator_reply.v1"
+ACKNOWLEDGEABLE_STATES = ("sending", "delivered", "delivery_unknown", "acknowledged", "completed")
+
+
+def canonical_uuid(value, field):
+    if not isinstance(value, str):
+        raise PolicyError(field + " must be a canonical UUID")
+    try:
+        valid = str(uuid.UUID(value)) == value
+    except ValueError:
+        valid = False
+    if not valid:
+        raise PolicyError(field + " must be a canonical UUID")
+    return value
+
+
+def operator_reply_input(message, body, request_id):
+    canonical_uuid(message, "message")
+    canonical_uuid(request_id, "request_id")
+    if not isinstance(body, str):
+        raise PolicyError("Reply body must be UTF-8 text")
+    try:
+        body.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        raise PolicyError("Reply body must be valid UTF-8 text") from None
+    body = body.strip()
+    if not body or len(body) > 16000:
+        raise PolicyError("Reply must contain 1–16000 Unicode code points after Python strip")
+    return body
+
+
 class Store:
     """One connection per operation. Write transactions serialize policy and delivery claims."""
 
@@ -59,6 +91,16 @@ class Store:
                 db.execute("ALTER TABLE sessions ADD COLUMN description TEXT NOT NULL DEFAULT ''")
             if "last_used" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN last_used REAL")
+            if "provider_name" not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN provider_name TEXT NOT NULL DEFAULT ''")
+                # Old names have no provenance: preserve them as possible aliases.
+                db.execute("UPDATE sessions SET provider_name=name")
+            if "name_is_alias" not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN name_is_alias INTEGER NOT NULL DEFAULT 1")
+                for row in db.execute("SELECT id,native_id,name,cwd FROM sessions").fetchall():
+                    native = row["native_id"]
+                    if row["name"] in (native, native[:12], f"{Path(row['cwd']).name} · {native[:8]}"):
+                        db.execute("UPDATE sessions SET name_is_alias=0 WHERE id=?", (row["id"],))
             db.execute("CREATE INDEX IF NOT EXISTS messages_pending ON messages(state,recipient,created)")
             db.execute("PRAGMA user_version=1")
 
@@ -80,15 +122,23 @@ class Store:
             db.close()
 
     @staticmethod
+    def _generic_setting_key(key):
+        if not isinstance(key, str) or key.startswith(OPERATOR_REPLY_PREFIX):
+            raise PolicyError("Reserved operator reply settings require the typed message API")
+
+    @staticmethod
     def setting(db, key, default=None):
+        Store._generic_setting_key(key)
         row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
         return json.loads(row[0]) if row else default
 
     def get_setting(self, key, default=None):
+        self._generic_setting_key(key)
         with self.connect() as db:
             return self.setting(db, key, default)
 
     def set_setting(self, key, value):
+        self._generic_setting_key(key)
         with self.connect(True) as db:
             db.execute("INSERT OR REPLACE INTO settings VALUES(?,?)", (key, json.dumps(value)))
 
@@ -131,12 +181,14 @@ class Store:
         with self.connect(True) as db:
             if db.execute("SELECT 1 FROM deleted_sessions WHERE session_id=?", (key,)).fetchone():
                 return key  # A stale discovery cannot resurrect a deleted conversation.
-            previous = db.execute("SELECT name,cwd FROM sessions WHERE id=?", (key,)).fetchone()
-            if previous and previous["name"] in (native_id, native_id[:12], f"{Path(previous['cwd']).name} · {native_id[:8]}"):
+            previous = db.execute("SELECT name,cwd,name_is_alias FROM sessions WHERE id=?", (key,)).fetchone()
+            if previous and not previous["name_is_alias"]:
                 db.execute("UPDATE sessions SET name=? WHERE id=?", (name, key))
-            db.execute("""INSERT INTO sessions(id,provider,native_id,name,cwd,updated)
-                VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated""",
-                       (key, provider, native_id, name, cwd, time.time()))
+                db.execute("UPDATE sessions SET name_is_alias=0 WHERE id=?", (key,))
+            db.execute("""INSERT INTO sessions(id,provider,native_id,name,cwd,updated,provider_name,name_is_alias)
+                VALUES(?,?,?,?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET
+                updated=excluded.updated,provider_name=excluded.provider_name""",
+                       (key, provider, native_id, name, cwd, time.time(), name))
             self._update(db, key, fields)
             activity = fields.get("updated")
             if isinstance(activity, (int, float)) and not isinstance(activity, bool) and math.isfinite(activity) and activity > 0:
@@ -151,6 +203,8 @@ class Store:
             raise PolicyError("Invalid session fields")
         for field, value in fields.items():
             db.execute(f"UPDATE sessions SET {field}=? WHERE id=?", (value, key))
+        if "name" in fields:
+            db.execute("UPDATE sessions SET name_is_alias=1 WHERE id=?", (key,))
 
     def update_session(self, key, **fields):
         with self.connect(True) as db:
@@ -166,6 +220,9 @@ class Store:
             db.execute("INSERT OR REPLACE INTO deleted_sessions VALUES(?,?)", (key, time.time()))
             db.execute("DELETE FROM pairs WHERE a=? OR b=?", (key, key))
             db.execute("DELETE FROM credentials WHERE session_id=?", (key,))
+            db.execute("""DELETE FROM settings WHERE key IN
+                (SELECT ? || id FROM messages WHERE sender=? OR recipient=?)""",
+                       (OPERATOR_REPLY_PREFIX, key, key))
             db.execute("DELETE FROM messages WHERE sender=? OR recipient=?", (key, key))
             db.execute("DELETE FROM settings WHERE key=?", ("claude_runtime:" + key,))
             db.execute("DELETE FROM settings WHERE key=?", ("owned_work:" + key,))
@@ -309,6 +366,77 @@ class Store:
             row = db.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone()
         return dict(row) if row else None
 
+    @staticmethod
+    def _available_message(db, message):
+        row = db.execute("SELECT * FROM messages WHERE id=?", (message,)).fetchone()
+        if not row or row["state"] == "deleted" or (row["state"] in ("completed", "failed") and row["body"] == "[cleared]"):
+            raise PolicyError("Message is missing, deleted or cleared")
+        return dict(row)
+
+    @staticmethod
+    def _operator_parent_hash(parent):
+        if parent["sender"] != "operator" or parent["origin"] != "operator" or parent["kind"] != "message":
+            raise PolicyError("Reply requires a regular message from the human operator")
+        value = {key: parent[key] for key in ("id", "sender", "recipient", "origin", "kind", "body")}
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+                                         separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _bound_reply(db, parent):
+        row = db.execute("SELECT value FROM settings WHERE key=?", (OPERATOR_REPLY_PREFIX + parent["id"],)).fetchone()
+        if not row:
+            return None
+        try:
+            reply = json.loads(row["value"])
+            fields = {"schema", "id", "parent_message_id", "parent_sha256", "sender", "recipient", "body", "request_id", "created"}
+            if not isinstance(reply, dict) or set(reply) != fields or reply["schema"] != OPERATOR_REPLY_SCHEMA:
+                raise PolicyError("Invalid stored operator reply")
+            canonical_uuid(reply["id"], "reply id")
+            body = operator_reply_input(reply["parent_message_id"], reply["body"], reply["request_id"])
+            if (reply["parent_message_id"] != parent["id"] or reply["sender"] != parent["recipient"]
+                    or reply["recipient"] != "operator" or reply["body"] != body
+                    or reply["parent_sha256"] != Store._operator_parent_hash(parent)
+                    or type(reply["created"]) not in (int, float) or not math.isfinite(reply["created"])
+                    or reply["created"] <= 0):
+                raise PolicyError("Stored operator reply does not match its original parent")
+            if not db.execute("SELECT 1 FROM sessions WHERE id=?", (reply["sender"],)).fetchone():
+                raise PolicyError("Stored operator reply recipient no longer exists")
+            return reply
+        except (ValueError, TypeError, OverflowError, RecursionError) as exc:
+            raise PolicyError("Stored operator reply is invalid or its parent binding changed") from exc
+
+    def message_get(self, message, *, identity, role):
+        if role != "operator" or identity != "operator":
+            raise PolicyError("Exact message lookup requires the human operator")
+        canonical_uuid(message, "message")
+        with self.connect() as db:
+            db.execute("BEGIN")  # Parent and attached record come from one read snapshot.
+            parent = self._available_message(db, message)
+            return {**parent, "reply": self._bound_reply(db, parent)}
+
+    def operator_reply(self, message, body, request_id, *, identity, role):
+        if role != "agent" or not isinstance(identity, str) or identity == "operator":
+            raise PolicyError("Only the original recipient's agent credential may reply to the operator")
+        body = operator_reply_input(message, body, request_id)
+        with self.connect(True) as db:
+            parent = self._available_message(db, message)
+            parent_hash = self._operator_parent_hash(parent)
+            if parent["recipient"] != identity or not db.execute("SELECT 1 FROM sessions WHERE id=?", (identity,)).fetchone():
+                raise PolicyError("Only the original recipient may reply to this operator message")
+            if parent["state"] not in ACKNOWLEDGEABLE_STATES:
+                raise PolicyError("Operator message is not available for a reply")
+            previous = self._bound_reply(db, parent)
+            if previous:
+                if (previous["sender"], previous["request_id"], previous["body"]) != (identity, request_id, body):
+                    raise PolicyError("One final reply already exists; reuse the exact request and body or ask for a new operator message")
+                return previous
+            reply = {"schema": OPERATOR_REPLY_SCHEMA, "id": str(uuid.uuid4()), "parent_message_id": message,
+                     "parent_sha256": parent_hash, "sender": identity, "recipient": "operator", "body": body,
+                     "request_id": request_id, "created": time.time()}
+            db.execute("INSERT INTO settings(key,value) VALUES(?,?)",
+                       (OPERATOR_REPLY_PREFIX + message, json.dumps(reply, ensure_ascii=False, allow_nan=False)))
+            return reply  # Posting a reply never changes acknowledgment/completion state.
+
     def receipt_messages(self, recipient):
         """Background reconciliation must not use the bounded UI history window."""
         with self.connect() as db:
@@ -341,7 +469,7 @@ class Store:
     def acknowledge(self, recipient, mid, completed=False):
         with self.connect(True) as db:
             row = db.execute("SELECT * FROM messages WHERE id=? AND recipient=?", (mid, recipient)).fetchone()
-            if not row or row["state"] not in ("sending", "delivered", "delivery_unknown", "acknowledged", "completed"):
+            if not row or row["state"] not in ACKNOWLEDGEABLE_STATES:
                 raise PolicyError("Message is not available for this acknowledgment")
             state = "completed" if completed or row["state"] == "completed" else "acknowledged"
             detail = "Agent explicitly confirmed completion; background work remains unverified" if state == "completed" else "Agent explicitly acknowledged reading"
@@ -387,6 +515,7 @@ class Store:
         with self.connect(True) as db:
             count = 0
             for mid in set(ids):
+                db.execute("DELETE FROM settings WHERE key=?", (OPERATOR_REPLY_PREFIX + mid,))
                 count += db.execute("""UPDATE messages SET body='[deleted]',detail='',
                     state='deleted',updated=? WHERE id=? AND state!='deleted'""",
                                     (time.time(), mid)).rowcount
@@ -397,9 +526,12 @@ class Store:
         if isinstance(days, bool) or not isinstance(days, int) or days < 0:
             raise PolicyError("Retention days must be a nonnegative integer")
         with self.connect(True) as db:
+            cutoff = time.time() - days * 86400
+            db.execute("""DELETE FROM settings WHERE key IN (SELECT ? || id FROM messages
+                WHERE state IN ('completed','failed') AND created<?)""", (OPERATOR_REPLY_PREFIX, cutoff))
             return db.execute("""UPDATE messages SET body='[cleared]',detail='' WHERE
                 state IN ('completed','failed') AND created<? AND body!='[cleared]'""",
-                              (time.time() - days * 86400,)).rowcount
+                              (cutoff,)).rowcount
 
     def maintain(self, days=30, *, compact=False):
         """Explicit offline maintenance; caller holds broker lock. No messages are deleted."""

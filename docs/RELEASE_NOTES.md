@@ -1,4 +1,37 @@
-# 1.4.0 beta candidate — Prism shared workspaces
+# 1.4.1 beta — compact Prism and discovery fixes
+
+- Show only the board title and local update date/time in Prism's header.
+  Record broker-assigned revision timestamps and preserve them across retries
+  and projection repair; older/local documents use source modification time.
+- Move board actions into a compact, initially collapsed accordion. Keep all
+  actions accessible through toolbar overflow at narrow widths and remember the
+  local expanded state. Use a concise, single-line 8pt footer with full hover text.
+- Include the recipient-bound `operator_reply` MCP operation and operator-only
+  `message_get` lookup already implemented in the source baseline. A final reply
+  remains separate from read acknowledgment, task completion and action approval.
+- Fix [#4](https://github.com/bherald/AI-CLI-MANAGER-VISOR/issues/4): refresh provider
+  titles independently of explicit VISOR aliases, search both, show differing
+  provider titles in tooltips, and apply requested names on re-registration.
+  Preserve old names as possible aliases because their original provenance is unknown.
+- Fix the reproduced handoff in [#5](https://github.com/bherald/AI-CLI-MANAGER-VISOR/issues/5):
+  save a fresh Codex thread's initial title through `thread/name/set`, then verify
+  its exact ID can resume through a second client after the creator closes.
+  No model turn, synthetic prompt, arbitrary delay or provider database edit is used.
+  Refuse terminal launch with an actionable error if persistence/handoff fails.
+- Fix [#6](https://github.com/bherald/AI-CLI-MANAGER-VISOR/issues/6): expire stale
+  Claude live statuses after successful empty discovery, distinguish unavailable
+  discovery as unknown, retain saved history and fresh managed hook/heartbeat evidence.
+
+Local Linux build and desktop shortcut delivery completed on 2026-10-27.
+The locked source pipeline, extracted-package acceptance, actual prior-1.4.0
+helper upgrade and desktop launch checks passed. Native Windows/TUI acceptance
+remains pending.
+See the [release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.1)
+for exact hosted package results and checksums, and the [completed feature and
+defect checklist](RELEASE_1_4_1.md) for source validation and remaining limits.
+Interactive Windows/Codex TUI acceptance remains separate from hosted builds.
+
+# 1.4.0 beta — Prism shared workspaces
 
 - Add shared Prism windows with movable cards for formatted notes, pictures,
   diagrams, charts, questions and freehand drawings. Operators can type and draw;

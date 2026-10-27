@@ -74,7 +74,7 @@ class ActivityMCPCase(unittest.TestCase):
 
     def test_reviewed_prism_tools_extend_legacy_inventory_without_operator_tools(self):
         names = {tool["name"] for tool in mcp.handle({"method": "tools/list"}, None)["tools"]}
-        self.assertEqual(names, {"peers", "send", "receive", "acknowledge"} | {t["name"] for t in ACTIVITY_TOOLS})
+        self.assertEqual(names, {"peers", "send", "receive", "acknowledge", "operator_reply"} | {t["name"] for t in ACTIVITY_TOOLS})
         self.assertFalse({"activity_bind", "activity_policy", "stop", "delete_session"} & names)
 
     def test_configured_large_activity_asset_passes_exact_frame(self):
