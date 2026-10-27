@@ -14,6 +14,9 @@ def main():
     parser.add_argument("--data-dir", help="Explicit portable data directory (never commit it)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--broker", action="store_true")
+    mode.add_argument("--web", "--prism-web", dest="prism_web", action="store_true", help="Serve optional authenticated VISOR and Prism browser views")
+    parser.add_argument("--web-host", default="127.0.0.1", help="Explicit bind address for --web (default: loopback)")
+    parser.add_argument("--web-port", type=int, default=0, help="Browser view port; 0 chooses a free port")
     mode.add_argument("--activity", nargs=argparse.REMAINDER,
                       help="Session-scoped Prism commands (put command options after --activity)")
     mode.add_argument("--mcp", action="store_true")
@@ -30,7 +33,7 @@ def main():
     mode.add_argument("--diagnose-loading", action="store_true", help="Load session metadata in the offscreen UI, report counts, and exit")
     parser.add_argument("--credential", type=Path)
     args = parser.parse_args()
-    if not (args.mcp or args.claude_hook or args.terminal or args.maintain_storage or args.smoke_test or args.activity is not None):
+    if not (args.prism_web or args.mcp or args.claude_hook or args.terminal or args.maintain_storage or args.smoke_test or args.activity is not None):
         prepare_runtime_path()
     if args.retention_days < 0 or (args.compact and not args.maintain_storage):
         parser.error("Retention must be nonnegative; --compact requires --maintain-storage")
@@ -58,6 +61,10 @@ def main():
         run_terminal(args.terminal)
         return
     root = data_dir(args.data_dir)
+    if args.prism_web:
+        from .prism_web import serve
+        serve(root, host=args.web_host, port=args.web_port)
+        return
     if args.activity is not None:
         from .activity_cli import run_activity
         arguments = (["--credential", str(args.credential)] if args.credential else []) + args.activity

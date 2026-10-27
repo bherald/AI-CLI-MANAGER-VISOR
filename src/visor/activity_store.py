@@ -15,13 +15,21 @@ from datetime import UTC, datetime
 from itertools import combinations
 from pathlib import Path
 
-from .activity_document import _RASTERS, ActivityPolicy, _identifier, _text, _validate
+from .activity_components import validate_event
+from .activity_document import (
+    _RASTERS,
+    ActivityPolicy,
+    _identifier,
+    _text,
+    _validate,
+    _validate_card_metadata,
+)
 from .store import PolicyError
 
 _ANY_CACHE = object()
 
 ACTIVITY_TABLES = {"activity_boards", "activity_revisions", "activity_assets",
-                   "activity_requests", "activity_replies", "activity_members", "activity_deleted", "activity_lifecycle"}
+                   "activity_requests", "activity_replies", "activity_events", "activity_members", "activity_deleted", "activity_lifecycle"}
 
 def _stamp():
     return datetime.now(UTC).isoformat()
@@ -68,6 +76,11 @@ class ActivityService:
                     id TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES activity_boards(id),
                     card_id TEXT NOT NULL, revision INTEGER NOT NULL, answer TEXT NOT NULL,
                     prompt_sha256 TEXT NOT NULL, created TEXT NOT NULL, state TEXT NOT NULL, recipient TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS activity_events(
+                    id TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES activity_boards(id),
+                    card_id TEXT NOT NULL, revision INTEGER NOT NULL, action_id TEXT NOT NULL,
+                    value TEXT NOT NULL, card_sha256 TEXT NOT NULL,
+                    created TEXT NOT NULL, state TEXT NOT NULL, recipient TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS activity_members(
                     board_id TEXT NOT NULL REFERENCES activity_boards(id), session_id TEXT NOT NULL,
                     PRIMARY KEY(board_id,session_id));
@@ -84,6 +97,7 @@ class ActivityService:
                 INSERT OR IGNORE INTO activity_lifecycle(board_id) SELECT id FROM activity_boards;
                 CREATE INDEX IF NOT EXISTS activity_board_owner ON activity_boards(owner,updated);
                 CREATE INDEX IF NOT EXISTS activity_reply_board ON activity_replies(board_id,created);
+                CREATE INDEX IF NOT EXISTS activity_event_recipient ON activity_events(recipient,created);
             """)
             columns = {row[1] for row in db.execute("PRAGMA table_info(activity_lifecycle)")}
             if "last_operator_open_seq" not in columns:
@@ -136,6 +150,15 @@ class ActivityService:
     def _members(self, db, identity):
         return [r[0] for r in db.execute("SELECT session_id FROM activity_members WHERE board_id=? ORDER BY session_id", (identity,))]
 
+    def _member_metadata(self, db, board):
+        members = self._members(db, board["id"])
+        names = {}
+        for identity in members:
+            session = db.execute("SELECT name FROM sessions WHERE id=?", (identity,)).fetchone()
+            names[identity] = session["name"] if session else "Session unavailable"
+        return {"members": members, "member_names": names,
+                "owner_name": names.get(board["owner"], "Session unavailable")}
+
     def _allowed(self, db, actor, board):
         if actor is None:
             return True
@@ -151,6 +174,7 @@ class ActivityService:
             raise PolicyError("Activity board is unavailable for this session")
         board = dict(row)
         board["view_state"] = self._view_state(db, board)
+        board.update(self._member_metadata(db, board))
         return board
 
     @staticmethod
@@ -263,7 +287,6 @@ class ActivityService:
                     raise PolicyError("Activity projection must not be a symlink")
                 if temporary is not None:
                     os.replace(temporary, path)
-                current["members"] = self._members(db, identity)
             self._remember_projection(identity, board["revision"], policy,
                                       {"state": "ready", "revision": board["revision"]}, path)
             return path, current, document
@@ -413,6 +436,7 @@ class ActivityService:
         if len(raw) > policy.max_document_bytes:
             raise PolicyError("Activity document exceeds the byte limit")
         candidate.pop("contributors", None)
+        candidate.pop("contributor_labels", None)
         candidate.pop("last_editor", None)
         for card in candidate.get("cards", []):
             if isinstance(card, dict):
@@ -489,7 +513,7 @@ class ActivityService:
             db.execute("BEGIN")
             result = [dict(row) for row in db.execute("SELECT * FROM activity_boards ORDER BY updated,id") if self._allowed(db, actor, row)]
             for board in result:
-                board["members"] = self._members(db, board["id"])
+                board.update(self._member_metadata(db, board))
                 board["view_state"] = self._view_state(db, board)
         if actor is None:
             identities = {board["id"] for board in result}
@@ -518,11 +542,57 @@ class ActivityService:
     def get(self, actor, id):
         self._actor(actor)
         path, result, document = self._projection(id, actor)
-        result["document"] = document
+        result["document"] = {**document, "contributor_labels": {
+            card["contributor"]: result["member_names"].get(card["contributor"], "Session unavailable")
+            for card in document["cards"]}}
         result["projection"] = {"state": "ready", "revision": result["revision"]}
         if actor is None:
             result["path"] = str(path)
         return result
+
+    def update_card(self, actor, id, card_id, changes, expected_revision, request_id):
+        """Merge a card against an immutable base, reusing guarded publish receipts."""
+        if self._actor(actor) is None:
+            raise PolicyError("Card updates require an authenticated session owner")
+        _identifier(card_id, "card id")
+        if type(expected_revision) is not int or expected_revision < 1:
+            raise PolicyError("Expected revision must be a positive integer")
+        if (not isinstance(changes, dict) or not changes
+                or {"id", "kind", "contributor"} & changes.keys()):
+            raise PolicyError("Card changes must be a nonempty object and cannot change id, kind or contributor")
+        payload = {"action": "update_card", "id": id, "card_id": card_id, "changes": changes,
+                   "expected_revision": expected_revision}
+        if len(_json(payload).encode("utf-8")) > self.policy().max_document_bytes:
+            raise PolicyError("Card update exceeds the document byte limit")
+        with self.store.connect() as db:
+            db.execute("BEGIN")
+            self._board(db, actor, id)
+            digest, previous = self._request(db, actor, request_id, payload)
+            if previous is not None:
+                return self._accepted(previous, request_id)
+            row = db.execute("SELECT document FROM activity_revisions WHERE board_id=? AND revision=?", (id, expected_revision)).fetchone()
+            if row is None:
+                raise PolicyError("The expected base revision is unavailable; read the current board")
+            document = json.loads(row["document"])
+        card = next((card for card in document["cards"] if card["id"] == card_id), None)
+        if card is None:
+            raise PolicyError("Card update must target a card in the expected revision")
+        card.update(changes)
+        document["revision"] = expected_revision + 1
+        # This receipt also recovers a crash after publish but before the outer
+        # request was recorded. A retry reconstructs the identical base document.
+        internal_request = "card-update-" + _hash(request_id.encode("utf-8"))
+        result = self.publish(actor, document, internal_request, expected_revision)
+        accepted = {key: value for key, value in result.items() if key != "projection"}
+        accepted["request_id"] = request_id
+        with self.store.connect(True) as db:
+            self._board(db, actor, id)
+            _, previous = self._request(db, actor, request_id, payload, digest)
+            if previous is None:
+                self._record_request(db, actor, request_id, digest, accepted)
+            else:
+                accepted = previous
+        return self._accepted(accepted, request_id)
 
     def control(self, actor, id, action, request_id):
         self._actor(actor)
@@ -636,18 +706,78 @@ class ActivityService:
             return [dict(row) for row in db.execute(query, values)
                     if self._allowed(db, actor, {"id": row["board_id"]})]
 
+    def event(self, id, card_id, revision, action_id, value, request_id):
+        """Record operator intent against the exact declared, current component."""
+        policy = self.policy()
+        _identifier(card_id, "card id")
+        if type(revision) is not int or revision < 1:
+            raise PolicyError("Event revision must be a positive integer")
+        payload = {"action": "event", "id": id, "card_id": card_id, "revision": revision,
+                   "action_id": action_id, "value": value}
+        with self.store.connect(True) as db:
+            board = self._board(db, None, id)
+            digest, previous = self._request(db, "operator", request_id, payload)
+            if previous is not None:
+                return previous
+            if revision != board["revision"]:
+                raise PolicyError("Activity changed; review the current card before acting")
+            row = db.execute("SELECT document FROM activity_revisions WHERE board_id=? AND revision=?", (id, revision)).fetchone()
+            document = json.loads(row["document"])
+            card = next((card for card in document["cards"] if card["id"] == card_id), None)
+            if card is None:
+                raise PolicyError("Event must target a current card")
+            try:
+                _validate_card_metadata(card, policy)
+                event = validate_event(card, {"action_id": action_id, "value": value}, policy)
+            except ValueError as exc:
+                raise PolicyError(str(exc)) from exc
+            result = {"id": str(uuid.uuid4()), "board_id": id, "card_id": card_id, "revision": revision,
+                      **event, "card_sha256": _hash(_json(card).encode("utf-8")),
+                      "created": _stamp(), "state": "pending", "recipient": card["contributor"]}
+            values = {**result, "value": _json(result["value"])}
+            db.execute("INSERT INTO activity_events VALUES(?,?,?,?,?,?,?,?,?,?)",
+                       tuple(values[key] for key in ("id", "board_id", "card_id", "revision", "action_id", "value",
+                                                    "card_sha256", "created", "state", "recipient")))
+            self._record_request(db, "operator", request_id, digest, result)
+        return result
+
+    def events(self, actor, board_id=None):
+        self._actor(actor)
+        with self.store.connect() as db:
+            db.execute("BEGIN")
+            if board_id is not None:
+                self._board(db, actor, board_id)
+            query = "SELECT e.* FROM activity_events e JOIN activity_boards b ON b.id=e.board_id"
+            conditions, values = [], []
+            if actor is not None:
+                conditions.append("e.recipient=?")
+                values.append(actor)
+            if board_id is not None:
+                conditions.append("e.board_id=?")
+                values.append(board_id)
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            query += " ORDER BY e.created,e.id"
+            return [{**dict(row), "value": json.loads(row["value"])} for row in db.execute(query, values)
+                    if self._allowed(db, actor, {"id": row["board_id"]})]
+
     def acknowledge(self, actor, event_id):
         if self._actor(actor) is None:
             raise PolicyError("Reply acknowledgment requires its session owner")
         with self.store.connect(True) as db:
-            row = db.execute("SELECT r.* FROM activity_replies r JOIN activity_boards b ON b.id=r.board_id WHERE r.id=? AND r.recipient=?",
-                             (event_id, actor)).fetchone()
+            table = "activity_replies"
+            row = db.execute("SELECT * FROM activity_replies WHERE id=? AND recipient=?", (event_id, actor)).fetchone()
             if row is None:
-                raise PolicyError("Activity reply is unavailable for this session")
+                table = "activity_events"
+                row = db.execute("SELECT * FROM activity_events WHERE id=? AND recipient=?", (event_id, actor)).fetchone()
+            if row is None:
+                raise PolicyError("Activity reply or event is unavailable for this session")
             self._board(db, actor, row["board_id"])
             result = dict(row)
+            if table == "activity_events":
+                result["value"] = json.loads(result["value"])
             if result["state"] == "pending":
-                db.execute("UPDATE activity_replies SET state='read' WHERE id=? AND state='pending'", (event_id,))
+                db.execute(f"UPDATE {table} SET state='read' WHERE id=? AND state='pending'", (event_id,))
                 result["state"] = "read"
             return result
 
@@ -752,7 +882,7 @@ class ActivityService:
             if board["revision"] != expected_revision:
                 raise PolicyError(f"Activity delete revision conflict; current revision is {board['revision']}; review and confirm again")
             db.execute("INSERT INTO activity_deleted VALUES(?,?,?,?)", (id, board["owner"], board["revision"], _stamp()))
-            for table in ("activity_replies", "activity_revisions", "activity_members", "activity_lifecycle"):
+            for table in ("activity_replies", "activity_events", "activity_revisions", "activity_members", "activity_lifecycle"):
                 db.execute(f"DELETE FROM {table} WHERE board_id=?", (id,))
             db.execute("DELETE FROM activity_boards WHERE id=?", (id,))
             # Retain request identities/digests, but remove reply bodies and other

@@ -1,3 +1,20 @@
+# 1.5.0 local candidate — rich Prism workspace
+
+- Consolidate floating Prism boards into one resizable desktop workspace with wide previous/next controls, a readable board picker and compact connected-session names.
+- Put secondary board/card controls and messages in default-closed accordions. Preserve drafts, saved layouts, quiet dismissal/reopen and the concise title/time and 8pt footer.
+- Add gauges, meters, progress, indicators, counters, statistics, sparklines, timers, tables, arrows, buttons, toggles, sliders and selectors. Keep direct controls below graphics, with typed contributor-addressed events and exact retry receipts.
+- Retain safe rich HTML, emoji, contained PNG/JPG images and freeform layouts. Add layout undo/redo, snapping and layer controls; expose a reusable agent catalog and optional templates.
+- Add the optional authenticated responsive VISOR/Prism browser view for desktop/tablet/phone. Loopback is the default; remote bind addresses require an explicit operator choice. The browser never receives the broker credential.
+- Standardize session/connection/board terms and multi-row selection: click, Ctrl/Cmd toggle, Shift range, Ctrl/Cmd+A, stable selection across refresh and guarded bulk actions with partial-error reporting.
+- Add portable styled tables (borders/colors/typography/badges) with optional sort/filter/copy and retained row/column state.
+- Add plain help and honest loading/empty/error/stale data cues, with small-card scrolling.
+- Expose machine-readable MCP schemas, presets, effective limits, current-helper CLI guidance and read-only publication preflight.
+- Offer the previous web listener at the next normal launch only if it was active at shutdown, using a default-No consent dialog and a fresh token; Stop/No clears the reminder.
+- Extend agent and web-service setup/operation documentation; prepare matching synthetic release pictures.
+- Update authoring, design references, examples and release documentation.
+
+Local build/review is authorized. Public source, tag, issue changes and release publication are held for operator approval. See [candidate evidence](RELEASE_1_5_0.md). Native Windows/Mac and real mobile/accessibility acceptance remain separate from Linux tests.
+
 # 1.4.1 beta — compact Prism and discovery fixes
 
 - Show only the board title and local update date/time in Prism's header.

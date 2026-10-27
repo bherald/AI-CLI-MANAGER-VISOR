@@ -104,7 +104,7 @@ class CodexRPC:
         try:
             if not self.ready.wait(10) or self.protocol.state != OPEN:
                 raise ProviderUnavailable(self.connection_error or "Codex control socket handshake timed out")
-            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.4.1"},
+            self.call("initialize", {"clientInfo": {"name": "visor", "title": "VISOR", "version": "1.5.0"},
                                      "capabilities": {"experimentalApi": experimental}})
             self.send({"method": "initialized", "params": {}})
         except Exception:

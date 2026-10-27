@@ -145,7 +145,7 @@ class ActivityLifecycleCase(unittest.TestCase):
         self.metadata["view_state"] = self.state(operator_dismissed=True, presentation="closed", reopen_requested=True)
         manager = self.manager()
         manager.update([copy.deepcopy(self.metadata)], asdict(ActivityPolicy()))
-        with patch("visor.activity.QInputDialog.getItem", return_value=("Saved discussion · board · Updated, Reopen requested", True)):
+        with patch("visor.activity.QInputDialog.getItem", return_value=("Saved discussion · Updated, Reopen requested", True)):
             manager.choose()
         self.assertEqual(manager.windows, {})
         self.assertEqual(len(self.jobs), 1)

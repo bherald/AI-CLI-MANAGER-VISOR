@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Prism · Visor</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/table.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#board">Skip to board</a>
+  <header class="app-header">
+    <div class="title-line"><span class="brand" aria-label="Prism">◈</span><h1 id="heading">Prism</h1><span id="updated"></span><a class="visor-link" href="/visor">VISOR sessions &amp; messages</a></div>
+    <nav class="board-nav" aria-label="Prism boards">
+      <button id="previous" class="arrow-button" aria-label="Previous Prism" title="Previous Prism (Alt+Left)">❮</button>
+      <label class="board-picker"><span class="sr-only">Choose a Prism</span><select id="board-picker"><option value="">Choose a Prism</option></select></label>
+      <span id="position" class="muted"></span>
+      <button id="next" class="arrow-button" aria-label="Next Prism" title="Next Prism (Alt+Right)">❯</button>
+    </nav>
+    <div id="connections" class="connections" aria-label="Connected sessions"></div>
+    <details class="board-options"><summary>Board actions</summary>
+      <div class="toolbar">
+        <button id="hide-board">Hide Prism</button><button id="show-board">Show selected</button><button id="show-all">Show all</button><button id="refresh">Refresh</button>
+        <label>View <select id="view"><option value="read">Read</option><option value="canvas">Canvas</option></select></label>
+        <label>Theme <select id="theme"><option value="slate">Slate</option><option value="warm">Warm</option><option value="contrast">High contrast</option></select></label>
+        <button id="undo-layout">Undo layout</button><button id="reset-layout">Reset layout</button>
+      </div>
+      <p class="hint">Canvas: drag a card’s move handle, or focus its move/resize handle and use arrow keys. Layout changes stay in this browser.</p>
+    </details>
+  </header>
+  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+  <main id="board" tabindex="-1" aria-label="Prism board"><div id="empty" class="empty">Connecting to your private Prism view…</div></main>
+  <footer><span id="footer-status">Private operator view</span><span>Actions send intent · Viewing does not mark read</span><button id="lock">Lock view</button></footer>
+</body>
+</html>

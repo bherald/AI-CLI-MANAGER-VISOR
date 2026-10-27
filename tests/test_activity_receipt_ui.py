@@ -25,9 +25,10 @@ class ReceiptUICase(unittest.TestCase):
         self.document = {"schema_version": 1, "id": "receipt-ui", "title": "Receipt UI", "revision": 1,
                          "cards": [{"id": "q", "title": "Question", "kind": "question", "prompt": "Next step?"}]}
         self.broker.activities.publish(self.owner, self.document, "publish")
-        self.fail = False
+        self.transport_fails = False
         self.calls = []
         self.window = ActivityWindow(self.broker.activities.get(None, "receipt-ui")["path"], self.root / "layouts", submit=self.submit)
+        self.window.session_names = {self.owner: "Release coordinator"}
         self.window.show()
         self.app.processEvents()
         self.card = self.window.cards["q"]
@@ -37,7 +38,7 @@ class ReceiptUICase(unittest.TestCase):
 
     def submit(self, operation, params, callback):
         self.calls.append((operation, params))
-        if self.fail:
+        if self.transport_fails:
             callback(None, "Temporary transport failure")
             return
         try:
@@ -60,16 +61,17 @@ class ReceiptUICase(unittest.TestCase):
         self.assertIn("waiting for acknowledgment", self.card.response_status.text())
         self.broker.dispatch("activity_acknowledge", {"event_id": self.event["id"]}, self.owner, "activity")
         self.window.refresh_receipts()
-        self.assertIn("Read by " + self.owner, self.card.response_status.text())
+        self.assertIn("Read by Release coordinator", self.card.response_status.text())
+        self.assertNotIn(self.owner, self.card.response_status.text())
         self.assertIn("not task completion", self.card.response_status.text())
         self.assertEqual(self.calls[-1], ("activity_replies", {"board_id": "receipt-ui"}))
         self.assertEqual(self.broker.activities.replies(self.owner)[0]["state"], "read")
 
     def test_receipt_failure_is_visible_then_recovers_without_resending(self):
-        self.fail = True
+        self.transport_fails = True
         self.window.refresh_receipts()
         self.assertIn("Receipt status unavailable", self.card.response_status.text())
-        self.fail = False
+        self.transport_fails = False
         self.window.refresh_receipts()
         self.assertIn("waiting for acknowledgment", self.card.response_status.text())
         self.assertEqual(sum(action == "activity_reply" for action, _ in self.calls), 1)

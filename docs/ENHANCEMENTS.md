@@ -1,3 +1,25 @@
+# VISOR 1.5.0 candidate features
+
+| Feature | State | Review scope |
+| --- | --- | --- |
+| One Prism workspace, wide navigation, compact named sessions | Implemented | Native Linux package/desktop delivery and lifecycle regressions |
+| Collapsed secondary card/board actions; direct controls outside gadgets | Implemented | Resize, draft and widget checks |
+| Rich gadgets, safe text, emoji, PNG/JPG and typed input | Implemented | Catalog/validation/UI/broker tests |
+| Optional agent templates and freeform authoring | Implemented | Same schema; no fixed template requirement |
+| Freeform layout undo/redo, snap and layer controls | Implemented | Local layout changes preserve shared content |
+| Optional VISOR + Prism browser for desktop/tablet/phone | Implemented | Auth/API/browser checks; real-device acceptance pending |
+| Standard terms and extended selection/bulk actions | Implemented | Qt modifier/refresh/deletion tests |
+| Styled tables: borders, typography, badges and quick tools | Implemented | Native/web rendering, selection, copy and state-retention regressions |
+| MCP authoring schemas, presets and read-only preflight | Implemented | Real scoped MCP stdio, CLI and ownership/assets/no-write tests |
+| Plain help and loading/empty/error/stale data cues | Implemented | Bounds, literal text, timezone and small-card scrolling checks |
+| Remembered web-start offer, with default-No consent | Implemented | Fresh/off/Stop/No/failure, remembered host/port, token rotation and launcher/smoke checks |
+| Web-service operation and agent guides | Prepared | [Web access](WEB_ACCESS.md), [agent workflow](PRISM_AGENTS.md) |
+| Public release | Awaiting operator approval | No public push/tag/release for 1.5.0 |
+
+See [release evidence](RELEASE_1_5_0.md), [design references](PRISM_DESIGN.md) and
+[agent authoring](../PRISM.md). Implementation status is separate from native
+platform, accessibility and operator acceptance.
+
 # VISOR 1.4.1 completed features
 
 | Feature | Implementation status | Validation / remaining acceptance |
@@ -37,9 +59,9 @@ Keep native Wayland controls, live Claude model/channel acceptance, detached-wor
 
 ## Usability follow-ups
 
-Use Microsoft's Fluent 2 accessibility guidance for both desktop and future web
-interfaces, with native platform conventions for keyboard focus and controls.
-These are design references, not a claim of conformance or a web-version plan:
+Use Microsoft's Fluent 2 accessibility guidance for desktop and web interfaces,
+with native platform conventions for keyboard focus and controls.
+These are design references, not a claim of conformance:
 https://fluent2.microsoft.design/accessibility
 https://learn.microsoft.com/en-us/windows/apps/design/input/keyboard-interactions
 

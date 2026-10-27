@@ -1,4 +1,4 @@
-"""Session-scoped Prism Window commands; never substitute the operator credential."""
+"""Session-scoped Prism board commands; never substitute operator credentials."""
 from __future__ import annotations
 
 import argparse
@@ -22,26 +22,39 @@ def _tool(name, description, properties=None, required=()):
 
 
 ACTIVITY_TOOLS = [
-    _tool("activity_list", "List your Prism windows and view_state: operator dismissal, presentation, unshown revision and quiet reopen request. Ownership comes from this session credential."),
-    _tool("activity_get", "Read one Prism window owned by or explicitly shared with this session.",
+    _tool("activity_catalog", "Discover supported components, presets, limits and the authoring workflow. Pass kind for its machine-readable schema; include_schema=true returns the full document schema. Use these defaults for consistent UI; freeform composition is supported.",
+          {"kind": {"type": "string"}, "include_schema": {"type": "boolean"}}),
+    _tool("activity_validate", "Read-only preflight before publishing. Returns valid, structured errors/paths, recommendations and current schema/revision/ownership/asset checks. Does not publish, reserve a revision, open a view or grant approval; publish rechecks the current state.",
+          {"document": {"type": "object"}, "expected_revision": {"type": "integer", "minimum": 0}}, ("document",)),
+    _tool("activity_template", "Get a complete optional starter board. This does not publish or open it. Customize cards freely, retain stable IDs, then publish with the current revision.",
+          {"name": {"type": "string", "enum": ["project-overview", "status-board", "decision-board", "freeform"]},
+           "id": {"type": "string"}, "title": {"type": "string"}}),
+    _tool("activity_list", "List your Prism boards, readable connected-session names and view_state: operator dismissal, presentation, unshown revision and quiet reopen request. Ownership comes from this session credential."),
+    _tool("activity_get", "Read one Prism board owned by or explicitly shared with this session.",
           {"id": {"type": "string"}}, ("id",)),
-    _tool("activity_publish", "Publish validated rich content for your Prism window. Reuse the exact request_id on retries; expected_revision prevents overwriting newer content. Schema: schema_version=1, id, title, revision, cards; card kinds text (html), image (path), diagram (nodes/edges), chart (labels/values), question (prompt/choices), sketch (canvas:[w,h], strokes:[{points:[[x,y],...],color,width}]). Upload raster assets first and use their returned paths.",
+    _tool("activity_publish", "Publish a validated Prism board. Read activity_catalog for gauges, meters, indicators, progress, counters, trends, timers, tables, arrows and declared controls; activity_template supplies optional recipes. Safe HTML, PNG/JPEG, emoji, diagrams, charts, questions and sketches remain supported. Freeform geometry is allowed. Reuse exact request_id on retries; expected_revision prevents overwriting newer content. Upload raster assets first and use returned paths. Operator events express intent and never authorize commands.",
           {"document": {"type": "object"}, "request_id": {"type": "string"},
            "expected_revision": {"type": "integer", "minimum": 0}},
           ("document", "request_id", "expected_revision")),
+    _tool("activity_update_card", "Update properties on one of your cards without rebuilding the board. Changes replace the named properties; id, kind and contributor are fixed. Use the current expected_revision and reuse the exact request_id and changes on retries. Other cards remain intact; normal schema, ownership and revision guards apply.",
+          {"id": {"type": "string"}, "card_id": {"type": "string"}, "changes": {"type": "object"},
+           "expected_revision": {"type": "integer", "minimum": 1}, "request_id": {"type": "string"}},
+          ("id", "card_id", "changes", "expected_revision", "request_id")),
     _tool("activity_control", "Open, focus, clear or close your Prism view. After operator dismissal, open/focus records one quiet reopen request; it cannot force a window open. Keep the stable board ID. Clear and close preserve board content; these actions do not complete session work.",
           {"id": {"type": "string"}, "action": {"type": "string", "enum": ["open", "focus", "clear", "close"]},
            "request_id": {"type": "string"}}, ("id", "action", "request_id")),
-    _tool("activity_share", "Set explicit members of your Prism window. The broker verifies ownership and existing pair permissions; sharing does not approve new session communication.",
+    _tool("activity_share", "Set explicit members of your Prism board. The broker verifies ownership and existing pair permissions; sharing does not approve new session communication.",
           {"id": {"type": "string"}, "members": {"type": "array", "items": {"type": "string"},
            "minItems": 1, "uniqueItems": True}, "request_id": {"type": "string"}},
           ("id", "members", "request_id")),
     _tool("activity_asset", "Upload a bounded raster image for this session. Use the returned relative path in an image card.",
           {"name": {"type": "string"}, "data_base64": {"type": "string"}},
           ("name", "data_base64")),
-    _tool("activity_replies", "Read operator replies addressed to your Prism windows. Reading does not acknowledge or complete them.",
+    _tool("activity_replies", "Read operator question replies addressed to your Prism boards. Reading does not acknowledge or complete them.",
           {"board_id": {"type": "string"}}),
-    _tool("activity_acknowledge", "Acknowledge reading an exact Prism reply belonging to this session. This does not approve actions or mark work complete.",
+    _tool("activity_events", "Read typed operator intent from your declared Prism actions, toggles, sliders and selections. Events are addressed to the contributing session and exact card/revision. Reading does not acknowledge, execute or approve anything.",
+          {"board_id": {"type": "string"}}),
+    _tool("activity_acknowledge", "Acknowledge reading an exact Prism question reply or component event belonging to this session. This only marks it read; it does not approve actions or mark work complete.",
           {"event_id": {"type": "string"}}, ("event_id",)),
 ]
 
@@ -113,6 +126,17 @@ def _parser():
     parser = argparse.ArgumentParser(prog="visor-console --activity", parents=[common])
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("list", parents=[common])
+    catalog = subcommands.add_parser("catalog", parents=[common])
+    catalog.add_argument("--kind")
+    catalog.add_argument("--include-schema", action="store_true")
+    validate = subcommands.add_parser("validate", parents=[common])
+    validate.add_argument("--document", type=Path, required=True)
+    validate.add_argument("--expected-revision", type=_nonnegative)
+    starter = subcommands.add_parser("template", parents=[common])
+    starter.add_argument("name", nargs="?", default="project-overview",
+                         choices=["project-overview", "status-board", "decision-board", "freeform"])
+    starter.add_argument("--id", default="project-overview")
+    starter.add_argument("--title")
     get = subcommands.add_parser("get", parents=[common])
     get.add_argument("id")
     publish = subcommands.add_parser("publish", parents=[common])
@@ -120,6 +144,12 @@ def _parser():
     publish.add_argument("--request-id", required=True)
     publish.add_argument("--expected-revision", type=_nonnegative,
                          help="Accepted current revision; default is document revision minus one")
+    update = subcommands.add_parser("update-card", parents=[common])
+    update.add_argument("id")
+    update.add_argument("card_id")
+    update.add_argument("--changes", required=True, help='JSON object, for example: {"value":95}')
+    update.add_argument("--expected-revision", type=_nonnegative, required=True)
+    update.add_argument("--request-id", required=True)
     for name in ("open", "focus", "clear", "close"):
         control = subcommands.add_parser(name, parents=[common])
         control.add_argument("id")
@@ -131,6 +161,8 @@ def _parser():
     share.add_argument("--request-id", required=True)
     replies = subcommands.add_parser("replies", parents=[common])
     replies.add_argument("--board-id")
+    events = subcommands.add_parser("events", parents=[common])
+    events.add_argument("--board-id")
     ack = subcommands.add_parser("ack", parents=[common])
     ack.add_argument("event_id")
     asset = subcommands.add_parser("asset", parents=[common])
@@ -188,8 +220,26 @@ def run_activity(argv, root):
     client = _client(args, root)
     if args.command == "list":
         return client.call("activity_list")
+    if args.command == "catalog":
+        return client.call("activity_catalog", **({"kind": args.kind} if args.kind else {}),
+                           **({"include_schema": True} if args.include_schema else {}))
+    if args.command == "validate":
+        from .activity_document import _read_json
+        policy = _policy(client, getattr(args, "policy", None))
+        document = _read_json(args.document, policy.max_document_bytes)
+        return client.call("activity_validate", document=document,
+                           **({"expected_revision": args.expected_revision} if args.expected_revision is not None else {}))
+    if args.command == "template":
+        return client.call("activity_template", name=args.name, id=args.id,
+                           **({"title": args.title} if args.title is not None else {}))
     if args.command == "get":
         return client.call("activity_get", id=args.id)
+    if args.command == "update-card":
+        changes = json.loads(args.changes)
+        if not isinstance(changes, dict):
+            raise ValueError("Card changes must be a JSON object")
+        return client.call("activity_update_card", id=args.id, card_id=args.card_id, changes=changes,
+                           expected_revision=args.expected_revision, request_id=args.request_id)
     if args.command in ("open", "focus", "clear", "close"):
         return client.call("activity_control", id=args.id, action=args.command,
                            request_id=args.request_id)
@@ -200,6 +250,8 @@ def run_activity(argv, root):
         return client.call("activity_share", id=args.id, members=members, request_id=args.request_id)
     if args.command == "replies":
         return client.call("activity_replies", **({"board_id": args.board_id} if args.board_id else {}))
+    if args.command == "events":
+        return client.call("activity_events", **({"board_id": args.board_id} if args.board_id else {}))
     if args.command == "ack":
         return client.call("activity_acknowledge", event_id=args.event_id)
     policy = _policy(client, getattr(args, "policy", None))

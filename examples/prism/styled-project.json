@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "id": "styled-project",
+  "title": "Project release review",
+  "revision": 1,
+  "updated_at": "2026-10-27T15:00:00Z",
+  "cards": [
+    {
+      "id": "release-checks",
+      "kind": "table",
+      "title": "Release checks",
+      "columns": [
+        "Check",
+        "Owner",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Permissions review",
+          "Quality lead",
+          "Needs review"
+        ],
+        [
+          "Backup rehearsal",
+          "Release lead",
+          "Verified"
+        ]
+      ],
+      "row_ids": [
+        "permissions-review",
+        "backup-rehearsal"
+      ],
+      "table_style": {
+        "density": "comfortable",
+        "striped": true,
+        "grid": "horizontal",
+        "border": {
+          "color": "#4C696F",
+          "width": 1,
+          "style": "solid"
+        },
+        "header": {
+          "background": "#503D29",
+          "text_color": "#F4E8D6",
+          "bold": true,
+          "border": {
+            "color": "#8BAFAD",
+            "width": 2,
+            "style": "solid"
+          }
+        },
+        "columns": [
+          {
+            "column": 0,
+            "width": 240,
+            "wrap": true
+          },
+          {
+            "column": 2,
+            "width": 140,
+            "align": "center"
+          }
+        ],
+        "rows": [],
+        "cells": [
+          {
+            "row": 0,
+            "column": 2,
+            "badge": "warning",
+            "bold": true,
+            "tooltip": "One issue still needs a decision",
+            "border": {
+              "color": "#D8B47A",
+              "width": 3,
+              "style": "dashed"
+            }
+          },
+          {
+            "row": 1,
+            "column": 2,
+            "badge": "success",
+            "tooltip": "Rehearsal verified"
+          }
+        ],
+        "sortable": true,
+        "filterable": true,
+        "copyable": true
+      },
+      "geometry": [
+        20,
+        20,
+        660,
+        370
+      ],
+      "help": "Select rows, sort a column or filter the view. Copy rows keeps the exact selected values. Strong borders mark the item needing attention.",
+      "data_status": {
+        "state": "stale",
+        "message": "One check is waiting for a retest",
+        "source": "Synthetic release evidence",
+        "observed_at": "2026-10-27T15:00:00Z"
+      }
+    },
+    {
+      "id": "metrics",
+      "kind": "table",
+      "title": "Capacity and performance",
+      "columns": [
+        "Metric",
+        "Current",
+        "Target"
+      ],
+      "rows": [
+        [
+          "Response time (ms)",
+          240,
+          300
+        ],
+        [
+          "Capacity used (%)",
+          42,
+          70
+        ],
+        [
+          "Checks passed",
+          19,
+          20
+        ]
+      ],
+      "row_ids": [
+        "response",
+        "capacity",
+        "checks"
+      ],
+      "table_style": {
+        "density": "compact",
+        "striped": false,
+        "grid": "none",
+        "border": {},
+        "header": {
+          "bold": true,
+          "align": "right"
+        },
+        "columns": [
+          {
+            "column": 0,
+            "width": 230,
+            "align": "left"
+          },
+          {
+            "column": 1,
+            "width": 100,
+            "align": "right"
+          },
+          {
+            "column": 2,
+            "width": 100,
+            "align": "right"
+          }
+        ],
+        "rows": [],
+        "cells": [
+          {
+            "row": 0,
+            "column": 1,
+            "bold": true,
+            "text_color": "#76D0C3",
+            "tooltip": "Within the current response-time target"
+          }
+        ],
+        "sortable": true,
+        "filterable": false,
+        "copyable": true
+      },
+      "geometry": [
+        700,
+        20,
+        520,
+        370
+      ],
+      "help": "Numbers sort numerically. Selection and column widths stay in place when an agent updates the data."
+    },
+    {
+      "id": "brief",
+      "kind": "text",
+      "title": "Decision brief",
+      "geometry": [
+        20,
+        410,
+        380,
+        290
+      ],
+      "html": "<h3>Ready after the final retest</h3><p>The package and recovery checks passed. Quality review is verifying one remaining permissions scenario.</p><p><b>Next:</b> review the result and decide on a staged rollout.</p>",
+      "help": "This is synthetic demonstration data. Table styling and local sort/filter do not approve a release."
+    },
+    {
+      "id": "readiness",
+      "kind": "gauge",
+      "title": "Readiness",
+      "value": 95,
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "detail": "19 of 20 checks passed",
+      "geometry": [
+        420,
+        410,
+        380,
+        290
+      ],
+      "actions": [
+        {
+          "id": "view-checks",
+          "label": "View checks"
+        }
+      ],
+      "help": "The gauge is a summary; use the check table for the item awaiting review."
+    },
+    {
+      "id": "owner-status",
+      "kind": "indicator",
+      "title": "Next review",
+      "state": "waiting",
+      "text": "Waiting for quality review",
+      "symbol": "◷",
+      "geometry": [
+        820,
+        410,
+        400,
+        290
+      ],
+      "help": "Use state text as well as color when reporting status."
+    }
+  ]
+}

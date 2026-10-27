@@ -11,6 +11,7 @@ from visor import __version__
 a = Analysis(
     [str(root / "scripts/package_entry.py")],
     pathex=[str(root / "src")],
+    datas=[(str(root / "src/visor/web"), "visor/web")],
     hiddenimports=["visor.ui", "PySide6.QtWidgets", "PySide6.QtCore", "PySide6.QtGui"],
 )
 pyz = PYZ(a.pure)

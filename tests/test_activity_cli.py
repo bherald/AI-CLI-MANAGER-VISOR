@@ -164,7 +164,7 @@ class ActivityCLICase(unittest.TestCase):
 
     def test_mcp_schema_has_no_actor_or_operator_access(self):
         names = {tool["name"] for tool in ACTIVITY_TOOLS}
-        self.assertEqual(names, {"activity_list", "activity_get", "activity_publish", "activity_control",
+        self.assertEqual(names, {"activity_catalog", "activity_validate", "activity_template", "activity_events", "activity_update_card", "activity_list", "activity_get", "activity_publish", "activity_control",
                                  "activity_asset", "activity_replies", "activity_acknowledge", "activity_share"})
         for tool in ACTIVITY_TOOLS:
             self.assertFalse(tool["inputSchema"]["additionalProperties"])

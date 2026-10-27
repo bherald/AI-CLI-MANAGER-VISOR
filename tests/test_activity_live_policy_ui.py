@@ -237,13 +237,14 @@ class LivePolicyUICase(unittest.TestCase):
         restored.show()
         card = restored.cards["q"]
         card.response_status.setText(status)
+        card.details_toggle.setChecked(True)
         self.app.processEvents()
         self.assertEqual(card.reply.toPlainText(), answer)
         self.assertEqual(card.response_status.text(), status)
         self.assertLessEqual(card.height(), 220)
         self.assertGreater(card.question_scroll.verticalScrollBar().maximum(), 0)
-        ordered = [card.content, card.caption, card.choices, card.reply, card.send, card.response_status]
-        rects = [(widget.mapTo(card.inner, QPoint(0, 0)).y(), widget.height()) for widget in ordered]
+        ordered = [card.content, card.choices, card.reply, card.send, card.caption, card.response_status]
+        rects = [(widget.mapTo(card.inner, QPoint(0, 0)).y(), widget.height()) for widget in ordered if widget.isVisible()]
         for (top, height), (next_top, _) in pairwise(rects):
             self.assertLessEqual(top + height, next_top, "Question fields overlap")
         for label in (card.content, card.caption, card.response_status):

@@ -15,6 +15,7 @@ sys.path.insert(0, str(root / "src"))
 from visor.broker import Client
 from visor.bundles import extract_archive
 from visor.notices import verify_qt_notices
+from visor.paths import write_private
 from visor.process import hidden_options
 
 
@@ -24,7 +25,7 @@ def main():
     args = parser.parse_args()
     suffix = ".zip" if os.name == "nt" else ".tar.gz"
     archive = args.archive or root / "dist" / (
-        f"visor-1.4.1-{platform.system().lower()}-{platform.machine().lower()}" + suffix)
+        f"visor-1.5.0-{platform.system().lower()}-{platform.machine().lower()}" + suffix)
     work = root / ".cache" / "native-package-acceptance" / uuid.uuid4().hex / "relocated package"
     extract_archive(archive.resolve(), work)
     if sys.platform == "darwin":
@@ -42,11 +43,12 @@ def main():
         resources = work / "visor"
         exe = resources / ("visor-console.exe" if os.name == "nt" else "visor-console")
         gui = resources / ("visor.exe" if os.name == "nt" else "visor")
-    for private in ("PLANNING_HISTORY.md", "IMPLEMENTATION_PLAN.md", "PUBLICATION_CHECKLIST.md"):
+    for private in ("PLANNING_HISTORY.md", "IMPLEMENTATION_PLAN.md", "PUBLICATION_CHECKLIST.md", "RELEASE_CANDIDATE.md"):
         if (resources / "docs" / private).exists():
             raise RuntimeError("Private release-planning document included in native package")
     for required in (exe, gui, resources / "LICENSE", resources / "README.md",
                      resources / "THIRD_PARTY_NOTICES.md", resources / "licenses",
+                     resources / "docs/WEB_ACCESS.md", resources / "docs/PRISM_AGENTS.md",
                      resources / "CONTRIBUTING.md",
                      resources / "native-binaries.json",
                      resources / "integrations/claude/visor/.mcp.json"):
@@ -76,12 +78,19 @@ def main():
     if os.name != "nt" and not all(os.access(path, os.X_OK) for path in (exe, gui)):
         raise RuntimeError("Extracted executables lost their executable permission")
     data = work / "isolated data"
+    data.mkdir(mode=0o700)
+    # Smoke rendering must stay unattended even if the previous GUI listener was
+    # active. Only a normal launch may offer the explicit restart question.
+    preferences = {"web_was_active": True, "web_host": "192.0.2.10", "web_port": 34881}
+    write_private(data / "prism-workspace.json", preferences)
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
     env["QT_QPA_PLATFORM"] = "offscreen"
     subprocess.run([str(exe), "--smoke-test", "--data-dir", str(data)], cwd=work,
                    env=env, check=True, timeout=45)
     if not (data / "ui-smoke.png").is_file():
         raise RuntimeError("Extracted UI did not render")
+    if json.loads((data / "prism-workspace.json").read_text())["web_was_active"] is not True:
+        raise RuntimeError("Smoke rendering changed the saved web restart preference")
     client = Client(data)
     message_id = None
     for iteration in range(2):
@@ -117,10 +126,11 @@ def main():
                 process.terminate()
                 process.wait(timeout=10)
     for script, target in (("verify_single_instance.py", gui), ("verify_claude_package.py", exe),
-                           ("verify_upgrade.py", exe), ("verify_state_recovery.py", exe)):
+                           ("verify_upgrade.py", exe), ("verify_state_recovery.py", exe),
+                           ("verify_prism_package.py", exe)):
         subprocess.run([sys.executable, str(root / "scripts" / script), str(target)],
                        cwd=root, check=True, timeout=120)
-    print("PASS: checksum, extracted resources/modes, relocated UI, broker restart/queue, singleton, simulated Claude, upgrade, private state recovery")
+    print("PASS: checksum, extracted resources/modes, relocated UI, broker restart/queue, singleton, simulated Claude, upgrade, private state recovery, authenticated Prism/browser")
     print(f"Isolated acceptance files: {work}")
 
 

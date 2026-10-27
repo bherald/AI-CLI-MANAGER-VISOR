@@ -60,9 +60,12 @@ class ConnectedPairsCase(unittest.TestCase):
         self.assertEqual(self.window.pairs.rowCount(), 29)
         self.assertGreater(self.window.pairs.verticalScrollBar().maximum(), 0)
         self.assertTrue(self.window.pairs.verticalScrollBar().isVisible())
-        self.assertIn("codex:ion-0000", self.window.pairs.item(0, 0).text())
+        self.assertEqual("Coordinator (codex · fixture) · 1", self.window.pairs.item(0, 0).text())
         self.assertIn("codex:session-0000", self.window.pairs.item(0, 0).toolTip())
-        self.assertIn("codex:ion-0001", self.window.pairs.item(0, 1).text())
+        self.assertEqual("Coordinator (codex · fixture) · 2", self.window.pairs.item(0, 1).text())
+        self.assertIn("codex:session-0001", self.window.pairs.item(0, 1).toolTip())
+        self.assertEqual(self.window.pairs.item(0, 0).data(Qt.ItemDataRole.UserRole),
+                         ["codex:session-0000", "codex:session-0001"])
         self.window.pairs.scrollToBottom()
         QTest.qWait(20)
         self.assertTrue(
@@ -107,7 +110,9 @@ class ConnectedPairsCase(unittest.TestCase):
         self.window.snapshot["sessions"].reverse()
         self.window.populate_combos()
         self.assertEqual(self.window.recipient.currentData(), "codex:session-0001")
-        self.assertIn("codex:ion-0001", self.window.recipient.currentText())
+        self.assertEqual("Coordinator (codex · fixture) · 2", self.window.recipient.currentText())
+        self.assertIn("codex:session-0001", self.window.recipient.itemData(
+            self.window.recipient.currentIndex(), Qt.ItemDataRole.ToolTipRole))
         self.assertNotEqual(
             self.window.source.itemText(1), self.window.source.itemText(2)
         )

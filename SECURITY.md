@@ -27,3 +27,28 @@ Graceful wrap-up never implies permission to force-terminate processes. No telem
 The maintainer is [bherald](https://github.com/bherald). For a published repository, use its Security tab and **Report a vulnerability** when private vulnerability reporting is enabled. Private reporting availability depends on the repository settings; verify the Security tab before submitting. Do not disclose a vulnerability containing credentials or private transcripts through a public issue or profile comment. Enabling and verifying private reporting is a repository-publication step.
 
 State snapshots remain private and can retain messages deleted after a backup. Automatic pre-upgrade backups are opt-in with bounded retention. Offline recovery invalidates old scoped credentials and terminal links and holds pending delivery. Treat exported/copied snapshots as sensitive; no provider login or provider history is included.
+
+## Optional browser access
+
+VISOR 1.5.0 can explicitly start a separate VISOR/Prism browser server. It is off
+by default. The UI defaults to loopback; an operator can choose a specific
+LAN/VPN IP. Stop revokes its private link, and restarting rotates the view token.
+If the GUI-owned service was active at shutdown, the next launch offers its
+previous address/port with a default-No consent dialog. Only explicit Yes starts
+it; Stop, No and failed restart leave it off. The saved preference stores no web
+token. The browser receives this separate token, never the broker credential. The link
+grants private session/message viewing, operator messaging and Prism interaction;
+share it only with intended operators.
+
+The server checks bearer authentication, exact Host/Origin, fixed routes and
+bounded strict JSON. It exposes sanitized session/message data and a fixed send
+operation, rather than general broker RPC or terminal/admin controls. Published
+Prism content cannot execute scripts or load remote resources. Typed gadget
+events record intent, not command execution or approval. Exact request IDs
+protect uncertain message and gadget retries.
+
+The built-in listener uses HTTP. Remote devices need an operator-managed trusted
+network/VPN, or a correctly configured HTTPS gateway that validates the public
+origin before forwarding. VISOR does not configure public hosting, firewall rules
+or TLS. Browser drafts and pending retries remain in that browser's local
+storage; native drafts and SQLite state retain their existing local protections.

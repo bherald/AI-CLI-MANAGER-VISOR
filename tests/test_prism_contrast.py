@@ -99,6 +99,9 @@ class PrismContrastCase(unittest.TestCase):
     def test_labels_render_muted_and_readable_under_actual_supervisor_theme(self):
         window = self.open()
         notes, question = window.cards["notes"], window.cards["question"]
+        notes.details_toggle.setChecked(True)
+        question.details_toggle.setChecked(True)
+        self.app.processEvents()
         labels = {
             "heading": window.heading,
             "status": window.status,

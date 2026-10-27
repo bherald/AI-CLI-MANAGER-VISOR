@@ -1,4 +1,4 @@
-"""Native Prism windows with local previews and authenticated broker collaboration."""
+"""Native Prism boards with local previews and authenticated broker collaboration."""
 from __future__ import annotations
 
 import copy
@@ -17,17 +17,20 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QIcon,
     QImage,
     QImageReader,
     QPainter,
     QPalette,
     QPen,
+    QPixmap,
     QTextDocument,
 )
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -47,14 +50,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .activity_components import KINDS, validate_actions, validate_component, validate_event
 from .activity_document import (
     ActivityPolicy,
+    _identifier,
     _text,
     _validate,
+    _validate_card_metadata,
     read_document,
     resolve_image,
     save_reply,
 )
+from .activity_gadgets import DirectActions, create_component
 from .activity_sketch import SketchPad
 from .paths import write_private
 
@@ -69,7 +76,7 @@ QLabel#metadata { color: #a5b5c3; font-size: 13px; }
 QLabel#prismStatus { color: #a5b5c3; font-size: 8pt; }
 QToolBar { border: 0; spacing: 3px; padding: 0; }
 QToolButton { padding: 2px 5px; border: 1px solid #465b69; border-radius: 3px; }
-QPushButton { background: #223440; color: #d4dee7; border: 1px solid #465b69; border-radius: 5px; padding: 7px 10px; }
+QPushButton { background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #2a414e,stop:1 #223440); color: #d4dee7; border: 1px solid #465b69; border-radius: 5px; padding: 4px 9px; }
 QPushButton:hover { background: #2b4350; border-color: #739a9e; }
 QPushButton#primary { background: #31595c; color: #e0e9ed; border: 1px solid #729b9e; }
 QPushButton:disabled { color: #a0aebb; background: #202d38; }
@@ -257,20 +264,23 @@ class Card(QMdiSubWindow):
     def __init__(self, board, data):
         super().__init__()
         self.board, self.data = board, data
+        transparent = QPixmap(16, 16)
+        transparent.fill(Qt.GlobalColor.transparent)
+        self.setWindowIcon(QIcon(transparent))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
         self.setMinimumSize(210, 145)
         self.inner = QWidget()
         self.inner.setObjectName("prismCard")
         self.layout = QVBoxLayout(self.inner)
         self.layout.setContentsMargins(12, 10, 12, 10)
+        self.layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.card_scroll = QScrollArea()
+        self.card_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.card_scroll.setWidgetResizable(True)
+        self.card_scroll.setWidget(self.inner)
+        self.setWidget(self.card_scroll)
         if data["kind"] == "question":
-            self.question_scroll = QScrollArea()
-            self.question_scroll.setWidgetResizable(True)
-            self.question_scroll.setWidget(self.inner)
-            self.layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
-            self.setWidget(self.question_scroll)
-        else:
-            self.setWidget(self.inner)
+            self.question_scroll = self.card_scroll
         self.reply = None
         self.question_changed = False
         self.edit_dirty = False
@@ -280,6 +290,12 @@ class Card(QMdiSubWindow):
         self.accepted_edit = None
         self.editor = None
         self.edit_sending = self.reply_sending = False
+        self.pending_event = None
+        self.event_sending = False
+        self.details = QWidget()
+        self.details_layout = QVBoxLayout(self.details)
+        self.details_layout.setContentsMargins(0, 0, 0, 0)
+        self.details_layout.setSpacing(4)
         kind = data["kind"]
         if kind == "text":
             self.content = QTextBrowser()
@@ -298,26 +314,33 @@ class Card(QMdiSubWindow):
             self.reply = QTextEdit()
             self.reply.setPlaceholderText("Your answer or a change you would like…")
             self.reply.setMinimumHeight(65)
+        elif kind in KINDS:
+            self.content = create_component(data, board.source, board.policy, on_event=self.send_event)
         else:
             self.content = Visual(data, board.source, board.policy)
         self.layout.addWidget(self.content, 0 if kind == "question" else 1)
+        self.data_notice = QLabel()
+        self.data_notice.setTextFormat(Qt.TextFormat.PlainText)
+        self.data_notice.setObjectName("metadata")
+        self.data_notice.setWordWrap(True)
+        self.layout.insertWidget(0, self.data_notice)
         self.caption = QLabel()
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
         self.caption.setObjectName("metadata")
         self.caption.setWordWrap(True)
         self.caption.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        self.layout.addWidget(self.caption)
+        self.details_layout.addWidget(self.caption)
         if kind in {"text", "sketch"}:
             if kind == "text":
                 self.editor = QTextEdit()
                 self.editor.setDocument(LocalTextDocument(self.editor))
                 self.editor.setHtml(safe_html(data["html"]))
                 self.editor.hide()
-                self.layout.addWidget(self.editor, 1)
+                self.details_layout.addWidget(self.editor, 1)
                 self.editor.textChanged.connect(self.mark_edited)
             row = QHBoxLayout()
             if kind == "text":
-                edit = QPushButton("Type / edit")
+                edit = QPushButton("Edit text")
                 edit.clicked.connect(lambda: self.editor.setVisible(not self.editor.isVisible()))
                 row.addWidget(edit)
             else:
@@ -337,16 +360,16 @@ class Card(QMdiSubWindow):
             self.reload_edit_button = discard
             discard.clicked.connect(self.discard_edit)
             row.addWidget(discard)
-            self.layout.addLayout(row)
+            self.details_layout.addLayout(row)
             self.edit_status = QLabel("Type a note or draw; save to share your changes.")
             self.edit_status.setTextFormat(Qt.TextFormat.PlainText)
             self.edit_status.setWordWrap(True)
-            self.layout.addWidget(self.edit_status)
+            self.details_layout.addWidget(self.edit_status)
         if kind == "question":
             self.layout.addWidget(self.choices)
             self.layout.addWidget(self.reply, 1)
             row = QHBoxLayout()
-            self.send = QPushButton("Save reply for session")
+            self.send = QPushButton("Send reply")
             self.send.setObjectName("primary")
             self.send.clicked.connect(self.save_answer)
             self.review = QPushButton("I reviewed the updated question")
@@ -360,11 +383,43 @@ class Card(QMdiSubWindow):
             self.response_status.setWordWrap(True)
             self.response_status.setObjectName("metadata")
             self.response_status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-            self.layout.addWidget(self.response_status)
+            self.details_layout.addWidget(self.response_status)
             self.reply.textChanged.connect(board.schedule_layout_save)
             self.choices.currentIndexChanged.connect(board.schedule_layout_save)
             self.reply.textChanged.connect(self.check_policy)
             self.choices.currentIndexChanged.connect(self.check_policy)
+        if kind not in KINDS:
+            self.direct_actions = DirectActions(data, board.policy, on_event=self.send_event)
+            self.layout.addWidget(self.direct_actions)
+        self.event_status = QLabel()
+        self.event_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.event_status.setWordWrap(True)
+        self.details_layout.addWidget(self.event_status)
+        self.retry_event_button = QPushButton("Retry action")
+        self.retry_event_button.clicked.connect(self.retry_event)
+        self.details_layout.addWidget(self.retry_event_button)
+        self.retry_event_button.hide()
+        self.clear_event_button = QPushButton("Clear saved retry…")
+        self.clear_event_button.clicked.connect(self.clear_pending_event)
+        self.details_layout.addWidget(self.clear_event_button)
+        self.clear_event_button.hide()
+        self.details_toggle = QToolButton()
+        self.details_toggle.setText("Card actions")
+        self.details_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.details_toggle.setCheckable(True)
+        self.details_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.details_toggle.toggled.connect(self.toggle_details)
+        secondary = QHBoxLayout()
+        secondary.addWidget(self.details_toggle)
+        secondary.addStretch()
+        self.help_button = QToolButton()
+        self.help_button.setText("?")
+        self.help_button.setToolTip("About this card")
+        self.help_button.clicked.connect(self.show_help)
+        secondary.addWidget(self.help_button)
+        self.layout.addLayout(secondary)
+        self.layout.addWidget(self.details)
+        self.details.hide()
         self.policy_notice = QLabel()
         self.policy_notice.setTextFormat(Qt.TextFormat.PlainText)
         self.policy_notice.setWordWrap(True)
@@ -382,6 +437,9 @@ class Card(QMdiSubWindow):
             self.edit_status.setText("Saved revision " + str(accepted["revision"]) + " · current document loaded."
                                      + (" Your newer draft remains unsaved." if self.edit_dirty else ""))
         self.setWindowTitle(data["title"])
+        self.help_button.setVisible(bool(data.get("help")))
+        self.help_button.setAccessibleName("Help for " + data["title"])
+        self.content.setAccessibleDescription(data.get("help", ""))
         kind = data["kind"]
         if kind == "text":
             scroll = self.content.verticalScrollBar().value()
@@ -414,13 +472,106 @@ class Card(QMdiSubWindow):
         else:
             self.content.set_card(data)
         caption = data.get("caption", "")
-        if data.get("contributor"):
-            caption += (" · " if caption else "") + "Contributor: " + data["contributor"]
+        status = data.get("data_status", {})
+        self.data_notice.setText(status.get("state", "").capitalize()
+                                 + (": " + status["message"] if status.get("message") else ""))
+        self.data_notice.setVisible(bool(status) and status.get("state") != "ready")
+        provenance = []
+        if status.get("source"):
+            provenance.append("Source: " + status["source"])
+        if status.get("observed_at"):
+            try:
+                observed = datetime.fromisoformat(status["observed_at"]).astimezone()
+                stamp = observed.strftime("%m/%d/%Y %I:%M %p").lower()
+            except (ValueError, OverflowError, OSError):
+                stamp = status["observed_at"]
+            provenance.append("Data as of: " + stamp)
+        if provenance:
+            caption += (" · " if caption else "") + " · ".join(provenance)
+        contributor = getattr(self.board, "session_names", {}).get(data.get("contributor"))
+        if contributor:
+            caption += (" · " if caption else "") + "From " + contributor
         self.caption.setText(caption)
         self.caption.setVisible(bool(caption))
+        if hasattr(self, "direct_actions"):
+            self.direct_actions.set_card(data)
         if self.edit_dirty and previous != data:
             self.edit_status.setText("This card changed while you were editing. Your draft is preserved; compare the current content before saving.")
         self.check_policy()
+
+    def toggle_details(self, expanded):
+        self.details.setVisible(expanded)
+        self.details_toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        self.board.schedule_layout_save()
+
+    def show_help(self):
+        if not self.data.get("help"):
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("About " + self.data["title"])
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.setText(self.data["help"])
+        box.setStandardButtons(QMessageBox.StandardButton.Close)
+        box.exec()
+
+    def send_event(self, event):
+        if self.event_sending or self.board.retired or not self.check_policy():
+            return
+        try:
+            validate_event(self.data, event, self.board.policy)
+        except (ValueError, TypeError) as exc:
+            self.event_status.setText(str(exc))
+            self.details_toggle.setChecked(True)
+            return
+        params = {"id": self.board.document["id"], "card_id": self.data["id"],
+                  "revision": self.board.document["revision"], **event}
+        if not self.pending_event:
+            self.pending_event = {"params": params, "request_id": uuid.uuid4().hex}
+        elif self.pending_event["params"] != params:
+            self.event_status.setText("Retry the unconfirmed action first; its original value is preserved.")
+            self.details_toggle.setChecked(True)
+            return
+        self.retry_event()
+
+    def retry_event(self):
+        if not self.pending_event or self.event_sending or self.board.retired:
+            return
+        request = copy.deepcopy(self.pending_event)
+        self.event_sending = True
+        self.retry_event_button.setEnabled(False)
+        self.clear_event_button.setEnabled(False)
+        self.event_status.setText("Sending…")
+        self.board.schedule_layout_save()
+        def finished(result, error):
+            self.event_sending = False
+            self.retry_event_button.setEnabled(True)
+            self.clear_event_button.setEnabled(True)
+            if error:
+                self.event_status.setText("Not confirmed: " + str(error) + ". Retry keeps the same request.")
+                self.details_toggle.setChecked(True)
+                self.retry_event_button.show()
+                self.clear_event_button.show()
+            else:
+                self.pending_event = None
+                self.retry_event_button.hide()
+                self.clear_event_button.hide()
+                self.event_status.setText("Sent to the contributing session · awaiting its response.")
+                self.board.status.setText("Action sent · awaiting the contributing session; this does not approve execution.")
+            self.board.schedule_layout_save()
+        self.board.request("activity_event", finished, request_id=request["request_id"], **request["params"])
+
+    def clear_pending_event(self):
+        if self.event_sending or not self.pending_event:
+            return
+        if QMessageBox.question(self, "Clear saved retry", "Clear this local retry? An unconfirmed action may already have reached the session. Clearing it allows a new action.",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        self.pending_event = None
+        self.retry_event_button.hide()
+        self.clear_event_button.hide()
+        self.event_status.setText("Saved retry cleared locally. Previously delivered actions are retained by the session.")
+        self.board.schedule_layout_save()
 
     def mark_edited(self):
         if not self.edit_dirty:
@@ -470,6 +621,9 @@ class Card(QMdiSubWindow):
                     self.validate_edit(content if self.edit_dirty else self.data["html" if self.editor else "strokes"])
                 elif self.data["kind"] == "image":
                     error = self.content.error
+                _validate_card_metadata(self.data, self.board.policy)
+                validate_component(self.data, self.board.policy)
+                validate_actions(self.data, self.board.policy)
             except (ValueError, TypeError, StopIteration) as exc:
                 error = str(exc)
         self.policy_notice.setText("On hold: " + error + ". Your content is preserved." if error else "")
@@ -500,6 +654,7 @@ class Card(QMdiSubWindow):
             self.check_policy()
             if error:
                 self.edit_status.setText("Not confirmed: " + str(error) + ". Draft kept. Reload card only to discard it.")
+                self.details_toggle.setChecked(True)
                 return
             newer_draft = self.pending_edit != request
             self.accepted_edit = {"revision": result["revision"], "request_id": request["request_id"],
@@ -510,6 +665,7 @@ class Card(QMdiSubWindow):
             self.edit_revision = result["revision"]
             self.board.poll_document()
             if self.accepted_edit:
+                self.details_toggle.setChecked(True)
                 if self.editor:
                     self.editor.show()
                 self.edit_status.setText("Saved revision " + str(result["revision"]) + " · shared display update pending."
@@ -617,6 +773,9 @@ class ActivityWindow(QMainWindow):
         self.policy_error = ""
         self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.document = read_document(self.source, self.policy)
+        self.session_names = {}
+        self.layout_history, self.layout_index = [], -1
+        self.snap_enabled = False
         self.cards, self.other_windows = {}, []
         self.last_reply = None
         self.receipts_busy = False
@@ -626,7 +785,7 @@ class ActivityWindow(QMainWindow):
         self.layout_timer.setSingleShot(True)
         self.layout_timer.setInterval(300)
         self.layout_timer.timeout.connect(self.save_layout)
-        self.setWindowTitle(self.document["title"] + " · Prism Window")
+        self.setWindowTitle(self.document["title"] + " · Prism")
         self.resize(1260, 850)
         root = QWidget()
         root.setObjectName("activityRoot")
@@ -653,11 +812,16 @@ class ActivityWindow(QMainWindow):
         self.actions_bar = QToolBar("Prism actions")
         self.actions_bar.setMovable(False)
         self.actions_bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        for label, callback in [("Open topic…", self.open_topic), ("Show all cards", self.show_cards),
+        for label, callback in [("Open board…", self.open_topic), ("Show all cards", self.show_cards),
                                 ("Tile cards", self.tile_cards), ("Reset layout", self.reset_layout),
-                                ("Clear view", self.clear_view), ("Save layout", self.save_layout),
+                                ("Hide all cards", self.clear_view), ("Undo layout", self.undo_layout),
+                                ("Redo layout", self.redo_layout), ("Bring forward", self.bring_forward),
+                                ("Send backward", self.send_backward), ("Save layout", self.save_layout),
                                 ("Export picture…", self.export_picture)]:
             self.actions_bar.addAction(label, callback)
+        self.snap_action = self.actions_bar.addAction("Snap to grid")
+        self.snap_action.setCheckable(True)
+        self.snap_action.toggled.connect(lambda enabled: setattr(self, "snap_enabled", enabled))
         outer.addWidget(self.actions_bar)
         self.actions_bar.hide()
         self.actions_toggle.toggled.connect(self.toggle_actions)
@@ -677,6 +841,7 @@ class ActivityWindow(QMainWindow):
         self.apply_document(self.document)
         self.restore_layout()
         self.loading = False
+        self.remember_layout()
         self.watch = QTimer(self)
         self.watch.setInterval(700)
         self.watch.timeout.connect(self.poll_document)
@@ -719,13 +884,14 @@ class ActivityWindow(QMainWindow):
         self.heading.setText(title)
         self.setWindowTitle(title)
         linked = document.get("session_link", {})
-        session = linked.get("label", linked.get("id", "Local document"))
+        session = self.session_names.get(linked.get("id"), linked.get("label", "Local board"))
         self.metadata.setText(f"{session}  ·  revision {document['revision']}  ·  {document.get('parent_record', 'Working topic')}\n"
                               "Session link is document metadata. This preview does not authenticate or control a running session.")
         if self.submit:
-            contributors = sorted(set(document.get("contributors", {}).values()))
-            self.metadata.setText(f"Owner: {linked.get('id', session)} · revision {document['revision']} · {document.get('parent_record', 'Working topic')}\n"
-                                  + "Contributors: " + ", ".join(contributors) + " · Last edit: " + document.get("last_editor", "session"))
+            contributors = sorted(set(self.session_names.values()))
+            editor = self.session_names.get(document.get("last_editor"), "Operator" if document.get("last_editor") == "operator" else "Session")
+            self.metadata.setText(f"Owner: {session} · revision {document['revision']} · {document.get('parent_record', 'Working topic')}\n"
+                                  + "Contributors: " + ", ".join(contributors) + " · Last edit: " + editor)
         self.heading.setToolTip("<qt>" + html.escape(self.metadata.text()).replace("\n", "<br>") + "</qt>")
         active = set()
         for i, data in enumerate(document["cards"]):
@@ -745,6 +911,8 @@ class ActivityWindow(QMainWindow):
         for key, card in self.cards.items():
             if key not in active:
                 card.hide()  # Keep unsent drafts; never delete source or task records.
+        if hasattr(self, "workspace"):
+            self.workspace.refresh()
 
     def apply_policy(self, policy, error=""):
         changed = policy is not None and policy != self.policy
@@ -758,6 +926,10 @@ class ActivityWindow(QMainWindow):
                 card.content.policy = policy
                 if changed or card.content.error:
                     card.content.set_card(card.data)
+            elif hasattr(card.content, "set_policy"):
+                card.content.set_policy(self.policy, error)
+            if hasattr(card, "direct_actions"):
+                card.direct_actions.set_policy(self.policy, error)
             card.check_policy()
         if error:
             self.status.setText("On hold: " + error + " · drafts preserved.")
@@ -797,9 +969,13 @@ class ActivityWindow(QMainWindow):
             return
         try:
             cards = {}
+            if self.snap_enabled and not self.loading:
+                for card in self.cards.values():
+                    card.move(round(card.x() / 20) * 20, round(card.y() / 20) * 20)
+            self.remember_layout()
             for key, card in self.cards.items():
                 cards[key] = {"geometry": [card.x(), card.y(), card.width(), card.height()],
-                              "visible": not card.isHidden()}
+                              "visible": not card.isHidden(), "pending_event": card.pending_event}
                 if card.editor or card.data["kind"] == "sketch":
                     cards[key].update(edit_dirty=card.edit_dirty, edit_revision=card.edit_revision,
                                       edit_content=safe_html(card.editor.toHtml()) if card.editor else card.content.strokes,
@@ -810,6 +986,7 @@ class ActivityWindow(QMainWindow):
                                       prompt_hash=question_fingerprint(card.data), needs_review=card.question_changed)
             write_private(self.layout_path, {"board_id": self.document["id"], "cards": cards,
                                              "actions_expanded": self.actions_toggle.isChecked(),
+                                             "snap": self.snap_enabled,
                                              "geometry": [self.x(), self.y(), self.width(), self.height()]})
         except (OSError, ValueError) as exc:
             self.status.setText("Layout not saved: " + str(exc))
@@ -820,6 +997,7 @@ class ActivityWindow(QMainWindow):
             if not isinstance(saved, dict) or saved.get("board_id") != self.document["id"]:
                 return
             self.actions_toggle.setChecked(saved.get("actions_expanded") is True)
+            self.snap_action.setChecked(saved.get("snap") is True)
             geometry = saved.get("geometry")
             if self.valid_geometry(geometry):
                 screen = QApplication.primaryScreen().availableGeometry()
@@ -837,6 +1015,28 @@ class ActivityWindow(QMainWindow):
                 if self.valid_geometry(state.get("geometry")):
                     card.setGeometry(*state["geometry"])
                 card.setVisible(state.get("visible", True))
+                pending = state.get("pending_event")
+                if (isinstance(pending, dict) and isinstance(pending.get("request_id"), str)
+                        and 0 < len(pending["request_id"]) <= 128 and isinstance(pending.get("params"), dict)):
+                    params = pending["params"]
+                    try:
+                        if (set(params) != {"id", "card_id", "revision", "action_id", "value"}
+                                or params["id"] != self.document["id"] or params["card_id"] != key
+                                or type(params["revision"]) is not int or params["revision"] < 1):
+                            raise ValueError("Invalid pending action")
+                        _identifier(params["action_id"], "pending action ID")
+                        value = params["value"]
+                        if isinstance(value, str):
+                            _text(value, "pending value", ActivityPolicy())
+                        elif (value is not None and type(value) is not bool
+                              and (type(value) not in (int, float) or abs(value) > 1e15 or not math.isfinite(value))):
+                            raise ValueError("Invalid pending action value")
+                        card.pending_event = pending
+                        card.retry_event_button.show()
+                        card.clear_event_button.show()
+                        card.event_status.setText("Unconfirmed action restored; retry reuses its original request.")
+                    except (ValueError, TypeError, KeyError):
+                        pass
                 accepted = state.get("accepted_edit")
                 if (not isinstance(accepted, dict) or type(accepted.get("revision")) is not int
                         or accepted["revision"] <= self.document["revision"]
@@ -906,6 +1106,43 @@ class ActivityWindow(QMainWindow):
                 card.show()
         self.schedule_layout_save()
 
+    def remember_layout(self):
+        if self.loading:
+            return
+        state = {key: {"geometry": [card.x(), card.y(), card.width(), card.height()], "visible": not card.isHidden()}
+                 for key, card in self.cards.items()}
+        if self.layout_index >= 0 and self.layout_history[self.layout_index] == state:
+            return
+        self.layout_history = self.layout_history[:self.layout_index + 1] + [state]
+        self.layout_history = self.layout_history[-40:]
+        self.layout_index = len(self.layout_history) - 1
+
+    def restore_history(self, offset):
+        self.remember_layout()
+        index = self.layout_index + offset
+        if not 0 <= index < len(self.layout_history):
+            return
+        self.layout_index = index
+        for key, state in self.layout_history[index].items():
+            if key in self.cards:
+                self.cards[key].setGeometry(*state["geometry"])
+                self.cards[key].setVisible(state["visible"])
+        self.schedule_layout_save()
+
+    def undo_layout(self):
+        self.restore_history(-1)
+
+    def redo_layout(self):
+        self.restore_history(1)
+
+    def bring_forward(self):
+        if card := self.area.activeSubWindow():
+            card.raise_()
+
+    def send_backward(self):
+        if card := self.area.activeSubWindow():
+            card.lower()
+
     def clear_view(self):
         for card in self.cards.values():
             card.hide()
@@ -938,7 +1175,8 @@ class ActivityWindow(QMainWindow):
             for event in events:
                 card = pending.get(event["id"])
                 if card and event["state"] == "read":
-                    card.response_status.setText("Read by " + event["recipient"] + " · acknowledgment is not task completion")
+                    name = self.session_names.get(event["recipient"], "contributing session")
+                    card.response_status.setText("Read by " + name + " · acknowledgment is not task completion")
                 elif card and event["state"] == "pending":
                     card.response_status.setText("Saved for the contributor · waiting for acknowledgment")
         self.request("activity_replies", finished, board_id=self.document["id"])
@@ -946,12 +1184,16 @@ class ActivityWindow(QMainWindow):
     def request(self, action, callback, **params):
         if self.retired:
             return
-        if action in {"activity_edit", "activity_reply"}:
+        if action in {"activity_edit", "activity_reply", "activity_event"}:
             try:
                 if self.policy_error:
                     raise ValueError(self.policy_error)
                 if action == "activity_reply":
                     _text(params["answer"], "answer", self.policy, nonempty=True, limit=self.policy.max_answer_chars)
+                elif action == "activity_event":
+                    if params["revision"] == self.document["revision"]:
+                        validate_event(self.cards[params["card_id"]].data,
+                                       {"action_id": params["action_id"], "value": params["value"]}, self.policy)
                 else:
                     self.cards[params["card_id"]].validate_edit(params["content"])
             except (ValueError, TypeError, KeyError, StopIteration) as exc:
@@ -965,7 +1207,7 @@ class ActivityWindow(QMainWindow):
             return
         try:
             if action != "activity_edit":
-                raise ValueError("This action requires a connected Prism window")
+                raise ValueError("This action requires a connected Prism board")
             current = read_document(self.source, self.policy)
             if current != self.document or params["revision"] != current["revision"]:
                 raise ValueError("Revision conflict; reload the current card")
@@ -985,7 +1227,13 @@ class ActivityWindow(QMainWindow):
             try:
                 window = ActivityWindow(path, self.state_dir, self.policy)
                 self.other_windows.append(window)
-                window.show()
+                if hasattr(self, "workspace"):
+                    self.workspace.add_board(window)
+                else:
+                    from .prism_workspace import PrismWorkspace
+                    self.workspace = PrismWorkspace(self.state_dir)
+                    self.workspace.add_board(self)
+                    self.workspace.add_board(window)
             except (OSError, ValueError) as exc:
                 QMessageBox.warning(self, "Cannot open topic", str(exc))
 
@@ -998,7 +1246,9 @@ class ActivityWindow(QMainWindow):
         if self.on_view and not self.suppress_view:
             def observed():
                 if self.on_view and not self.suppress_view and not self.closing_view:
-                    self.on_view("visible" if self.isVisible() and not self.isMinimized() else "hidden",
+                    workspace = getattr(self, "workspace", None)
+                    visible = self.isVisible() and not self.isMinimized() and not (workspace and workspace.isMinimized())
+                    self.on_view("visible" if visible else "hidden",
                                  self.document["revision"])
             QTimer.singleShot(0, observed)
 
@@ -1023,6 +1273,8 @@ class ActivityWindow(QMainWindow):
             event.ignore()
             return
         self.closing_view = True
+        if hasattr(self, "workspace"):
+            self.workspace.board_hidden(self)
         event.accept()
 
 
@@ -1032,14 +1284,14 @@ def launch_activity(paths, state_dir, policy=None, screenshot=None):
     app.setFont(QFont("Sans Serif", 10))
     app.setStyleSheet(STYLE)
     windows = [ActivityWindow(path, state_dir, policy) for path in paths]
-    for i, window in enumerate(windows):
-        window.move(window.x() + i * 32, window.y() + i * 32)
-        window.show()
+    from .prism_workspace import PrismWorkspace
+    workspace = PrismWorkspace(state_dir)
+    for window in windows:
+        workspace.add_board(window, focus=False)
     if screenshot:
         def capture():
-            ok = windows[0].grab().save(str(screenshot), "PNG")
-            for window in windows:
-                window.close()
+            ok = workspace.grab().save(str(screenshot), "PNG")
+            workspace.close()
             app.exit(0 if ok else 1)
         QTimer.singleShot(500, capture)
     return app.exec()
@@ -1049,6 +1301,7 @@ class ActivityManager:
     """Track actual Qt presentation separately from requested views and operator intent."""
     def __init__(self, supervisor):
         self.supervisor = supervisor
+        self.workspace = None
         self.windows, self.sequences, self.observed_sequences = {}, {}, {}
         self.boards = []
         self.pending, self.dismissed, self.inflight, self.reported = {}, {}, {}, {}
@@ -1238,6 +1491,7 @@ class ActivityManager:
                 self.persist()
             window = self.windows.get(key)
             if window:
+                self.update_names(window, board)
                 window.view_sequence = sequence
                 window.poll_document()
                 if not state.get("operator_dismissed") and state.get("presentation") in {"unknown", "requested"}:
@@ -1245,7 +1499,9 @@ class ActivityManager:
                     window.observe_view_later()
             self.flush(key)
             if key in self.dismissed or self.local_error:
-                if window and window.isVisible():
+                open_in_workspace = bool(self.workspace and key in self.workspace.boards
+                                         and key not in self.workspace.hidden_boards)
+                if window and (window.isVisible() or open_in_workspace):
                     self.hide_window(window)
                     if state.get("operator_dismissed"):
                         self.record_view(key, "closed", window.document["revision"])
@@ -1268,9 +1524,33 @@ class ActivityManager:
                         self.hide_window(window)
                         self.record_view(key, "hidden", window.document["revision"])
             except (OSError, ValueError) as exc:
-                self.supervisor.status.setText("Prism window unavailable: " + str(exc))
+                self.supervisor.status.setText("Prism board unavailable: " + str(exc))
                 self.sequences.pop(key, None)
         self.update_indicator()
+
+    def update_names(self, window, board):
+        sessions = getattr(self.supervisor, "snapshot", {}).get("sessions", [])
+        names = {session["id"]: session.get("name") or session.get("provider_name") or "Session"
+                 for session in sessions}
+        members = board.get("member_names", {})
+        if isinstance(members, dict):
+            names.update(members)
+        ids = set(board.get("members", [])) | set(window.document.get("contributors", {}).values())
+        owner = board.get("owner") or window.document.get("session_link", {}).get("id")
+        if owner:
+            ids.add(owner)
+        labels = {key: names[key] for key in ids if key in names}
+        if not labels and board.get("owner_name"):
+            labels = {owner: board["owner_name"]}
+        if labels != window.session_names:
+            window.session_names = labels
+            window.apply_document(window.document)
+
+    def ensure_workspace(self):
+        if self.workspace is None:
+            from .prism_workspace import PrismWorkspace
+            self.workspace = PrismWorkspace(self.supervisor.root, self)
+        return self.workspace
 
     def open(self, board, focus=True):
         key = board["id"]
@@ -1279,14 +1559,12 @@ class ActivityManager:
                                               getattr(self, "policy", ActivityPolicy()), submit=self.submit,
                                               on_view=lambda state, revision: self.record_view(key, state, revision))
         window = self.windows[key]
+        self.update_names(window, board)
         if self.policy_error:
             window.apply_policy(None, self.policy_error)
         window.view_sequence = board["view_seq"]
         window.poll_document()
-        window.showNormal() if window.isMinimized() else window.show()
-        if focus:
-            window.raise_()
-            window.activateWindow()
+        self.ensure_workspace().add_board(window, focus=focus)
         window.observe_view_later()
         return window
 
@@ -1354,6 +1632,8 @@ class ActivityManager:
                 + (["Display pending"] if board.get("projection_error") else []))
 
     def update_indicator(self):
+        if self.workspace:
+            self.workspace.refresh()
         indicator = getattr(self.supervisor, "prism_button", None)
         if indicator is not None:
             count = sum(bool(self.markers(board)) for board in self.boards)
@@ -1362,11 +1642,19 @@ class ActivityManager:
 
     def choose(self):
         if not self.boards:
-            QMessageBox.information(self.supervisor, "Prism windows", "No Prism windows yet. Enable Prism access from a session's menu, then ask that session to publish a board.")
+            QMessageBox.information(self.supervisor, "Prism boards", "No Prism boards yet. Enable Prism access from a session's menu, then ask that session to publish a board.")
             return
-        labels = [board["title"] + " · " + board["id"]
+        if self.workspace is not None and self.workspace.selector.count():
+            self.workspace.showNormal()
+            self.workspace.raise_()
+            self.workspace.activateWindow()
+            self.workspace.refresh()
+            return
+        labels = [board["title"]
                   + (" · " + ", ".join(self.markers(board)) if self.markers(board) else "") for board in self.boards]
-        label, accepted = QInputDialog.getItem(self.supervisor, "Prism windows", "Open a shared workspace", labels, 0, False)
+        if len(set(labels)) != len(labels):
+            labels = [f"{index + 1}. {label}" for index, label in enumerate(labels)]
+        label, accepted = QInputDialog.getItem(self.supervisor, "Prism boards", "Open a shared workspace", labels, 0, False)
         if accepted:
             self.operator_open(self.boards[labels.index(label)])
 
@@ -1375,6 +1663,8 @@ class ActivityManager:
         window.suppress_view = True
         try:
             window.close()
+            if hasattr(window, "workspace"):
+                window.workspace.board_hidden(window)
         finally:
             window.suppress_view = False
 
@@ -1388,6 +1678,8 @@ class ActivityManager:
             window.on_view = None
             window.submit = None
             self.hide_window(window)
+            if self.workspace:
+                self.workspace.remove_board(window)
             window.watch.stop()
             window.receipt_timer.stop()
             window.layout_timer.stop()
@@ -1429,3 +1721,5 @@ class ActivityManager:
         self.stopping = True
         for key in list(self.windows):
             self.remove_window(key)
+        if self.workspace:
+            self.workspace.shutdown()

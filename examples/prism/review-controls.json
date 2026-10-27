@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "review-controls",
+  "title": "Project review controls",
+  "revision": 1,
+  "cards": [
+    {
+      "id": "detailed-checks",
+      "kind": "toggle",
+      "title": "Review detail",
+      "action_id": "request-detail",
+      "label": "Show detailed checks",
+      "value": false,
+      "geometry": [
+        20,
+        20,
+        340,
+        280
+      ]
+    },
+    {
+      "id": "review-target",
+      "kind": "slider",
+      "title": "Preview target",
+      "action_id": "request-target",
+      "label": "Target (%)",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "value": 75,
+      "geometry": [
+        380,
+        20,
+        340,
+        280
+      ]
+    },
+    {
+      "id": "review-stage",
+      "kind": "select",
+      "title": "Next review stage",
+      "action_id": "request-stage",
+      "label": "Review stage",
+      "choices": [
+        "Evidence",
+        "Verification",
+        "Pilot"
+      ],
+      "value": "Verification",
+      "geometry": [
+        740,
+        20,
+        340,
+        280
+      ]
+    },
+    {
+      "id": "request-report",
+      "kind": "action",
+      "title": "Project report",
+      "action_id": "request-report",
+      "label": "Request project report",
+      "geometry": [
+        20,
+        320,
+        340,
+        280
+      ]
+    },
+    {
+      "id": "review-timer",
+      "kind": "timer",
+      "title": "Review interval",
+      "seconds": 300,
+      "running": false,
+      "mode": "countdown",
+      "detail": "Paused · five-minute review",
+      "geometry": [
+        380,
+        320,
+        340,
+        280
+      ]
+    },
+    {
+      "id": "review-status",
+      "kind": "indicator",
+      "title": "Review status",
+      "state": "waiting",
+      "text": "Awaiting your review",
+      "symbol": "◷",
+      "actions": [
+        {
+          "id": "show-evidence",
+          "label": "Show evidence"
+        }
+      ],
+      "geometry": [
+        740,
+        320,
+        340,
+        280
+      ]
+    }
+  ]
+}

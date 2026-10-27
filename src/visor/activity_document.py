@@ -95,6 +95,41 @@ def _relative_image(value, policy):
     return path
 
 
+def _validate_card_metadata(card, policy):
+    _object(card, "card")
+    _text(card.get("title"), "card title", policy, nonempty=True)
+    if "caption" in card:
+        _text(card["caption"], "card caption", policy)
+    if "help" in card:
+        _text(card["help"], "card help", policy, limit=min(1000, policy.max_text_chars))
+    if "data_status" in card:
+        status = _object(card["data_status"], "data_status")
+        if set(status) - {"state", "message", "source", "observed_at"}:
+            raise ValueError("Unknown data_status field")
+        if not isinstance(status.get("state"), str) or status["state"] not in {"ready", "loading", "empty", "error", "stale"}:
+            raise ValueError("Unknown data_status state")
+        for name, limit in (("message", 400), ("source", 160), ("observed_at", 64)):
+            if name in status:
+                _text(status[name], "data_status " + name, policy, limit=min(limit, policy.max_text_chars))
+        if "observed_at" in status:
+            try:
+                observed = datetime.fromisoformat(status["observed_at"])
+                if observed.tzinfo is None or observed.utcoffset() is None:
+                    raise ValueError("Missing timezone")
+                observed.astimezone(UTC)
+                observed.astimezone()
+            except (ValueError, OverflowError, OSError) as exc:
+                raise ValueError("data_status observed_at requires an ISO date/time with timezone") from exc
+    if "geometry" in card:
+        geometry = _items(card["geometry"], "geometry", 4)
+        if len(geometry) != 4:
+            raise ValueError("Geometry requires x, y, width, height")
+        if any(type(value) is not int or abs(value) > 100_000 for value in geometry):
+            raise ValueError("Card geometry must use integer coordinates within 100000")
+        if geometry[2] < 100 or geometry[3] < 80:
+            raise ValueError("Card geometry requires width at least 100 and height at least 80")
+
+
 def _validate(document, policy):
     _object(document, "document")
     if type(document.get("schema_version")) is not int or document["schema_version"] != 1:
@@ -112,17 +147,7 @@ def _validate(document, policy):
     cards = _items(document.get("cards"), "cards", policy.max_cards)
     _unique_objects(cards, "card")
     for card in cards:
-        _text(card.get("title"), "card title", policy, nonempty=True)
-        if "caption" in card:
-            _text(card["caption"], "card caption", policy)
-        if "geometry" in card:
-            geometry = _items(card["geometry"], "geometry", 4)
-            if len(geometry) != 4:
-                raise ValueError("Geometry requires x, y, width, height")
-            if any(type(value) is not int or abs(value) > 100_000 for value in geometry):
-                raise ValueError("Card geometry must use integer coordinates within 100000")
-            if geometry[2] < 100 or geometry[3] < 80:
-                raise ValueError("Card geometry requires width at least 100 and height at least 80")
+        _validate_card_metadata(card, policy)
         kind = card.get("kind")
         if kind == "text":
             _text(card.get("html"), "card html", policy)
@@ -199,7 +224,11 @@ def _validate(document, policy):
                 if not choices or len(set(choices)) != len(choices):
                     raise ValueError("Question choices must be nonempty and distinct")
         else:
-            raise ValueError("Unknown activity card kind")
+            from .activity_components import validate_component
+            if not validate_component(card, policy):
+                raise ValueError("Unknown activity card kind")
+        from .activity_components import validate_actions
+        validate_actions(card, policy)
     return document
 
 

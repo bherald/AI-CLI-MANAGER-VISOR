@@ -28,3 +28,12 @@ Use disposable sessions for destructive tests. Never interpret a skip, simulated
 ## 1.3.0 review follow-through
 
 The accepted review/enhancement list, including terminal fonts and profiles on all three platforms, is tracked in [ENHANCEMENTS.md](ENHANCEMENTS.md). Message identity, upgrade visibility, reconnection, drafts, private backups/recovery, appearance controls and build-space checks are implemented in the candidate; platform acceptance limits remain explicit. Consult the versioned release notes for the exact published source revision and native-build results.
+
+## Prism and optional web 1.5.0 acceptance
+
+The single workspace, rich components and combined VISOR/Prism browser feature
+are implemented. Native Windows/Mac, real Android/iPhone/iPad, screen readers,
+scaling and unusual display/network configurations still need acceptance.
+Browser scope is session status, recent messages, operator messaging/receipts and
+Prism; terminal lifecycle/admin stays in the desktop. HTTPS gateway configuration
+and public hosting remain operator-managed and are not enabled automatically.

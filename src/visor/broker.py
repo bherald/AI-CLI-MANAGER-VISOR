@@ -44,7 +44,7 @@ from .providers import (
 from .store import PolicyError, Store, canonical_uuid, operator_reply_input
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-26-prism-compact-discovery"
+BUILD = "2026-10-27-prism-table-agent-ui-r4"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -53,9 +53,11 @@ WRAP_UP = ("Finish your current safe step, save context, report validation and r
 
 
 ACTIVITY_AGENT_ACTIONS = frozenset({"activity_list", "activity_get", "activity_publish", "activity_control",
-                                    "activity_share", "activity_asset", "activity_replies", "activity_acknowledge", "activity_limits"})
+                                    "activity_share", "activity_asset", "activity_replies", "activity_events", "activity_acknowledge", "activity_limits",
+                                    "activity_catalog", "activity_template", "activity_update_card", "activity_validate"})
 ACTIVITY_OPERATOR_ACTIONS = frozenset({"activity_list", "activity_get", "activity_control", "activity_share",
-                                       "activity_reply", "activity_replies", "activity_edit", "activity_delete", "activity_view", "activity_bind", "activity_revoke", "activity_limits"})
+                                       "activity_reply", "activity_replies", "activity_event", "activity_events", "activity_edit", "activity_delete", "activity_view", "activity_bind", "activity_revoke", "activity_limits",
+                                       "activity_catalog", "activity_template"})
 
 
 def activity_request_limit(policy):
@@ -165,7 +167,7 @@ class Broker:
             self.store.set_external_focus(params["session"], None)
             return True
         if action == "ping":
-            return {"running": True, "version": "1.4.1", "build": BUILD,
+            return {"running": True, "version": "1.5.0", "build": BUILD,
                     "capabilities": ["message_get", "operator_reply"],
                     "limits": {"message_max_chars": 16000, "max_rpc_bytes": 65536}}
         if action == "terminal_appearance":
@@ -359,12 +361,37 @@ class Broker:
             self.store.session(actor)
         if action == "activity_limits":
             return asdict(self.activities.policy())
+        if action == "activity_catalog":
+            from .activity_components import catalog
+            from .activity_contract import describe_catalog
+            if (set(params) - {"kind", "include_schema"}
+                    or "kind" in params and not isinstance(params["kind"], str)
+                    or type(params.get("include_schema", False)) is not bool):
+                raise PolicyError("Catalog accepts kind and include_schema only")
+            result = describe_catalog(catalog(), self.activities.policy(), **params)
+            if not operator:
+                result["local_cli"] = {"command": [*own_command(console=True), "--data-dir", str(self.root), "--activity"],
+                    "authentication": "Reuse this session's existing --credential PATH, or --session PROVIDER:ID after Enable Prism access. Never use operator credentials.",
+                    "purpose": "Current installed helper for MCP clients with a cached tool inventory; no session restart is required."}
+            return result
+        if action == "activity_validate":
+            from .activity_preflight import preflight
+            if set(params) - {"document", "expected_revision"} or "document" not in params:
+                raise PolicyError("Preflight requires document and optional expected_revision")
+            return preflight(self.activities, actor, **params)
+        if action == "activity_template":
+            from .activity_components import template
+            from .activity_document import _validate
+            document = template(params.get("name", "project-overview"), params.get("id", "project-overview"), params.get("title"))
+            return _validate(document, self.activities.policy())
         if action == "activity_list":
             return self.activities.list(actor)
         if action == "activity_get":
             return self.activities.get(actor, params["id"])
         if action == "activity_publish":
             return self.activities.publish(actor, params["document"], params["request_id"], params.get("expected_revision", 0))
+        if action == "activity_update_card":
+            return self.activities.update_card(actor, params["id"], params["card_id"], params["changes"], params["expected_revision"], params["request_id"])
         if action == "activity_control":
             result = self.activities.control(actor, params["id"], params["action"], params["request_id"])
             if params["action"] in ("open", "focus") and result["view_action"] in ("open", "focus"):
@@ -385,6 +412,19 @@ class Broker:
             return self.activities.replies(actor, board_id)
         if action == "activity_acknowledge":
             return self.activities.acknowledge(actor, params["event_id"])
+        if action == "activity_events":
+            board_id = params.get("board_id")
+            if operator:
+                if not isinstance(board_id, str) or not board_id:
+                    raise PolicyError("Operator event lookup requires an explicit board_id")
+                fields = ("id", "board_id", "card_id", "revision", "action_id", "state", "recipient", "created")
+                return [{key: event[key] for key in fields} for event in self.activities.events(None, board_id)]
+            return self.activities.events(actor, board_id)
+        if action == "activity_event":
+            allowed_fields = {"id", "card_id", "revision", "action_id", "value", "request_id"}
+            if set(params) != allowed_fields:
+                raise PolicyError("Component events require only id, card_id, revision, action_id, value and request_id")
+            return self.activities.event(params["id"], params["card_id"], params["revision"], params["action_id"], params["value"], params["request_id"])
         if action == "activity_reply":
             return self.activities.reply(params["id"], params["card_id"], params["revision"], params["answer"], params["request_id"])
         if action == "activity_view":

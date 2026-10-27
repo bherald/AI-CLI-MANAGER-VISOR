@@ -46,6 +46,7 @@ from .activity_management import manage_prism_windows
 from .broker import ensure_broker
 from .layout import Rect
 from .platforms import enable_window_resize, focus_verified
+from .selection import RowTable, capture_selection, restore_selection, selected_ids
 
 STYLE = """
 QWidget { background: #111c24; color: #e1eaf0; font-size: 13px; }
@@ -99,7 +100,7 @@ def button(text, callback=None, primary=False):
 
 
 def table(headers):
-    widget = QTableWidget(0, len(headers))
+    widget = RowTable(0, len(headers))
     widget.setHorizontalHeaderLabels(headers)
     widget.verticalHeader().hide()
     widget.verticalHeader().setMinimumSectionSize(20)
@@ -175,6 +176,7 @@ class Window(QMainWindow):
         self.draft_recipient = None
         self.draft_loading = False
         self.draft_saving = False
+        self._web_restore_checked = False
         self.setWindowTitle(f"VISOR {__version__}")
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(840, 460)
@@ -198,23 +200,29 @@ class Window(QMainWindow):
         self.prism_button = button("Prism", self.prism.choose)
         search.addWidget(self.prism_button)
         search.addWidget(button("Refresh", self.refresh))
-        search.addWidget(button("+ New", self.new_session, True))
+        search.addWidget(button("New session…", self.new_session, True))
         menu_button = button("...")
         menu_button.setAccessibleName("Supervisor menu")
         menu = QMenu(menu_button)
-        for name, callback in [("Manage Prism windows…", lambda: manage_prism_windows(self)),
-                               ("Register saved session…", self.register),
-                               ("Start / reconnect broker", self.connect_broker),
-                               ("Terminal appearance…", self.terminal_appearance),
-                               ("State backup settings…", self.backup_settings),
-                               ("Back up VISOR state now", self.backup_state),
-                               ("Restore backup instructions…", self.restore_instructions),
-                               ("About / diagnostics…", self.about),
-                               ("Claude Code settings…", self.claude_settings),
-                               ("Stop broker…", self.stop_broker),
-                               ("Clear completed / failed message text…", self.clear_history),
-                               ("Exit…", self.close)]:
-            menu.addAction(name, callback)
+        menu.addAction("Web access…", self.web_access)
+        menu.addSeparator()
+        for group, actions in (
+            ("Prism", [("Manage Prism boards…", lambda: manage_prism_windows(self))]),
+            ("Sessions & messages", [("Register saved session…", self.register),
+                                    ("Claude Code settings…", self.claude_settings),
+                                    ("Clear finished message text…", self.clear_history)]),
+            ("Appearance", [("Terminal appearance…", self.terminal_appearance)]),
+            ("Backup & recovery", [("Backup settings…", self.backup_settings),
+                                   ("Back up VISOR state", self.backup_state),
+                                   ("Restore instructions…", self.restore_instructions)]),
+            ("Broker", [("Start or reconnect", self.connect_broker), ("Stop broker…", self.stop_broker)]),
+            ("Help", [("About VISOR / diagnostics…", self.about)]),
+        ):
+            submenu = menu.addMenu(group)
+            for name, callback in actions:
+                submenu.addAction(name, callback)
+        menu.addSeparator()
+        menu.addAction("Exit…", self.close)
         menu_button.setMenu(menu)
         search.addWidget(menu_button)
         outer.addLayout(search)
@@ -248,6 +256,8 @@ class Window(QMainWindow):
         stats.addWidget(self.counts, 1)
         stats.addWidget(self.open_only)
         stats.addWidget(button("Show all", self.clear_session_filters))
+        self.delete_sessions_button = button("Delete selected sessions…", self.delete_selected_sessions)
+        stats.addWidget(self.delete_sessions_button)
         outer.addLayout(stats)
         self.session_hint = QLabel()
         self.session_hint.setWordWrap(True)
@@ -262,10 +272,12 @@ class Window(QMainWindow):
         self.sessions.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.sessions.horizontalHeader().setStretchLastSection(False)
         self.sessions.setColumnWidth(4, 130)
-        self.sessions.setColumnWidth(5, 150)
+        self.sessions.setColumnWidth(5, 180)
         self.sessions.setSortingEnabled(True)
         self.sessions.sortItems(4, Qt.SortOrder.DescendingOrder)
-        self.sessions.setToolTip("Double-click to focus a console. Press Delete to remove selected sessions after Yes/No confirmation.")
+        self.sessions.setToolTip("Click to select; Ctrl/Cmd-click toggles; Shift-click selects a range; Ctrl/Cmd+A selects all visible rows. Double-click to focus. Delete requires confirmation.")
+        self.sessions.deleteRequested.connect(lambda: self.delete_selected_sessions())
+        self.sessions.itemSelectionChanged.connect(self.update_selection_actions)
         self.sessions.itemDoubleClicked.connect(self.focus_session_item)
         self.session_section = QGroupBox("Sessions")
         session_layout = QVBoxLayout(self.session_section)
@@ -306,19 +318,22 @@ class Window(QMainWindow):
         connect.addWidget(self.source, 1)
         connect.addWidget(QLabel("↔"))
         connect.addWidget(self.target, 1)
-        connect.addWidget(button("+ Add pair", self.add_pair))
+        connect.addWidget(button("Connect", self.add_pair))
         connections.addLayout(connect)
         self.pairs = table(["Session", "Connected session"])
         self.pairs.setAccessibleName("Connected session pairs")
-        self.pairs.setMinimumHeight(70)
-        self.pairs.setMaximumHeight(112)
+        self.pairs.setMinimumHeight(55)
+        self.pairs.setMaximumHeight(85)
         self.pairs.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.pairs.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.pairs.setToolTip("Select connections; scroll to see all pairs. Session IDs distinguish matching names.")
+        self.pairs.setToolTip("Ctrl/Cmd-click toggles rows; Shift-click selects a range; Ctrl/Cmd+A selects all visible connections. Delete disconnects selected pairs after confirmation.")
+        self.pairs.deleteRequested.connect(lambda: self.remove_pair())
+        self.pairs.itemSelectionChanged.connect(self.update_selection_actions)
         connections.addWidget(self.pairs)
         pair_actions = QHBoxLayout()
         pair_actions.addStretch()
-        pair_actions.addWidget(button("Remove selected pairs…", self.remove_pair))
+        self.disconnect_button = button("Disconnect selected…", self.remove_pair)
+        pair_actions.addWidget(self.disconnect_button)
         pair_actions.addWidget(button("Manage connections…", self.manage_connections))
         connections.addLayout(pair_actions)
         body.addWidget(self.connected_section)
@@ -333,7 +348,7 @@ class Window(QMainWindow):
         self.message_filter.currentIndexChanged.connect(self.render_messages)
         filters.addWidget(self.message_filter)
         filters.addStretch()
-        filters.addWidget(button("Clean up finished…", self.cleanup_finished_messages))
+        filters.addWidget(button("Delete finished messages…", self.cleanup_finished_messages))
         messages_layout.addLayout(filters)
         self.messages = table(["Time", "From → To", "Message", "State"])
         self.messages.setColumnWidth(0, 65)
@@ -342,8 +357,11 @@ class Window(QMainWindow):
         self.messages.setMinimumHeight(100)
         self.messages.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.messages.customContextMenuRequested.connect(self.message_menu)
+        self.messages.deleteRequested.connect(lambda: self.delete_messages())
+        self.messages.itemSelectionChanged.connect(self.update_selection_actions)
         messages_layout.addWidget(self.messages, 1)
-        messages_layout.addWidget(button("Delete selected messages…", self.delete_messages))
+        self.delete_messages_button = button("Delete selected messages…", self.delete_messages)
+        messages_layout.addWidget(self.delete_messages_button)
         compose = QHBoxLayout()
         self.recipient = QComboBox()
         self.recipient.setMinimumWidth(140)
@@ -359,6 +377,7 @@ class Window(QMainWindow):
         note = QLabel("Operator messages always available · Claude live alerts: supervisor menu")
         messages_layout.addWidget(note)
         body.addWidget(self.messages_section, 1)
+        self.update_selection_actions()
         communication.addWidget(self.comm_body, 1)
         self.comm_toggle.clicked.connect(lambda: self.collapse(self.comm_body, self.comm_toggle, "Session communication"))
         self.splitter.addWidget(self.communication)
@@ -422,6 +441,43 @@ class Window(QMainWindow):
                     callback(result)
                 self.poll()
         self.job(lambda: client.call(action, **params), finished)
+
+    def rpc_batch(self, action, requests, title, callback=None):
+        """Use existing guarded item APIs, continuing after individual failures."""
+        if not requests:
+            return
+        if len(requests) == 1:
+            identity, params = requests[0]
+            if callback is None:
+                self.rpc(action, **params)
+            else:
+                self.rpc(action, callback=lambda result: callback({identity}), **params)
+            return
+        client = self.client
+        if client is None:
+            self.status.setText("Broker disconnected. No selected actions were sent.")
+            return
+        self.status.setText(f"{title}: processing {len(requests)} selected items…")
+        def run():
+            completed, errors = set(), []
+            for identity, params in requests:
+                try:
+                    client.call(action, **params)
+                    completed.add(identity)
+                except Exception as exc:  # noqa: BLE001 -- report each broker failure and continue the batch
+                    errors.append(str(exc))
+            return completed, errors
+        def finished(result, error):
+            completed, errors = result if not error else (set(), [str(error)])
+            self.status.setText(f"{title}: {len(completed)} of {len(requests)} completed"
+                                + (f"; {len(errors)} failed. Surviving selections are retained." if errors else "."))
+            if callback:
+                callback(completed)
+            self.poll()
+            if errors:
+                QMessageBox.warning(self, title, f"{len(completed)} of {len(requests)} selected items completed.\n\n"
+                                    + "\n".join(errors[:8]))
+        self.job(run, finished)
 
     def connect_broker(self, automatic=False):
         if self.reconnecting or automatic and self.broker_stopped:
@@ -511,8 +567,7 @@ class Window(QMainWindow):
         toggle.setText(("v " if widget.isVisible() else "> ") + title)
 
     def render_sessions(self, *args):
-        selected = {self.sessions.item(i.row(), 0).data(Qt.ItemDataRole.UserRole)
-                    for i in self.sessions.selectionModel().selectedRows()}
+        selection = capture_selection(self.sessions)
         query, provider = self.search.text().casefold(), self.filter.currentText()
         sessions = self.snapshot["sessions"]
         labels = self.session_labels()
@@ -563,7 +618,7 @@ class Window(QMainWindow):
             main.setToolTip("Focus linked external window; verify its selected tab" if external else
                             "Verify and focus managed terminal" if active else "Resume exact saved session")
             layout.addWidget(main)
-            message = button("Msg", lambda checked=False, k=key: self.select_recipient(k))
+            message = button("Message", lambda checked=False, k=key: self.select_recipient(k))
             message.setAccessibleName("Message session")
             layout.addWidget(message)
             more = button("...")
@@ -581,11 +636,13 @@ class Window(QMainWindow):
             participation.setCheckable(True)
             participation.setChecked(bool(session["participates"]))
             participation.triggered.connect(lambda value, k=key: self.rpc("participate", session=k, enabled=value))
-            menu.addAction("Wrap up", lambda k=key: self.rpc("wrap_up", sessions=[k], request_id=uuid.uuid4().hex))
+            menu.addAction("Wrap up", lambda k=key: self.rpc("wrap_up", sessions=self.session_action_ids(k), request_id=uuid.uuid4().hex))
             menu.addAction("Wrap-up wait time…", lambda k=key: self.wrap_up_wait(k))
             menu.addAction("Reconcile closed terminal…", lambda k=key: self.reconcile(k))
             menu.addSeparator()
-            menu.addAction("Delete session…", lambda k=key: self.delete_session(k))
+            delete = menu.addAction("Delete session…", lambda k=key: self.delete_sessions(self.session_action_ids(k)))
+            menu.aboutToShow.connect(lambda k=key, control=delete: control.setText(
+                f"Delete selected sessions ({len(self.session_action_ids(k))})…"))
             more.setMenu(menu)
             layout.addWidget(more)
             item = SessionItem("Focus" if active else "Resume")
@@ -594,10 +651,8 @@ class Window(QMainWindow):
             self.sessions.setCellWidget(row, 5, actions)
         self.sessions.setSortingEnabled(True)
         self.fit_session_section()
-        for row in range(self.sessions.rowCount()):
-            if self.sessions.item(row, 0).data(Qt.ItemDataRole.UserRole) in selected:
-                for col in range(self.sessions.columnCount()):
-                    self.sessions.item(row, col).setSelected(True)
+        restore_selection(self.sessions, selection)
+        self.update_selection_actions()
         self.counts.setText(f"{len(visible)} of {len(sessions)} sessions shown    {sum(self.is_open(s) for s in sessions)} VISOR terminals    "
                             f"{sum(s['status'] == 'working' for s in visible)} working shown    "
                             f"{sum(s['status'] == 'waiting' for s in visible)} need you shown")
@@ -698,19 +753,23 @@ class Window(QMainWindow):
     def session_labels(self):
         sessions = self.snapshot["sessions"]
         counts = Counter(s["name"].casefold() for s in sessions)
-        suffix_counts = Counter((s["name"].casefold(), s["id"].split(":", 1)[-1][-8:])
-                                for s in sessions)
         labels = {}
         for session in sessions:
             key, name = session["id"], session["name"]
             if counts[name.casefold()] > 1:
-                provider, _, native = key.partition(":")
-                short = f"{provider}:{native[-8:]}"
-                if suffix_counts[name.casefold(), native[-8:]] > 1:
-                    short = key
-                labels[key] = f"[{short}] {name}"
+                provider = session.get("provider", key.partition(":")[0])
+                project = Path(session.get("cwd", "")).name
+                detail = " · ".join(part for part in (provider, project) if part)
+                labels[key] = f"{name} ({detail})"
             else:
                 labels[key] = name
+        duplicates = Counter(label.casefold() for label in labels.values())
+        numbered = Counter()
+        for key in sorted(labels):
+            label = labels[key]
+            if duplicates[label.casefold()] > 1:
+                numbered[label.casefold()] += 1
+                labels[key] = f"{label} · {numbered[label.casefold()]}"
         return labels
 
     def populate_combos(self):
@@ -730,43 +789,55 @@ class Window(QMainWindow):
             elif combo is self.recipient and (self.draft_recipient or self.composer.text()):
                 combo.setCurrentIndex(-1)
             combo.blockSignals(False)
-        selected = {tuple(self.pairs.item(index.row(), 0).data(Qt.ItemDataRole.UserRole))
-                    for index in self.pairs.selectionModel().selectedRows()}
-        scroll = self.pairs.verticalScrollBar().value()
+        selection = capture_selection(self.pairs)
+        sorting = self.pairs.isSortingEnabled()
+        self.pairs.setSortingEnabled(False)
+        self.pairs.clearContents()
         self.pairs.setRowCount(len(self.snapshot["pairs"]))
-        self.pairs.clearSelection()
         for row, pair in enumerate(self.snapshot["pairs"]):
             for column, key in enumerate(pair):
-                item = QTableWidgetItem(names.get(key, key))
+                item = QTableWidgetItem(names.get(key, "Unavailable session"))
                 item.setData(Qt.ItemDataRole.UserRole, list(pair))
-                item.setToolTip(f"{names.get(key, key)}\n{key}")
+                item.setToolTip(f"{names.get(key, 'Unavailable session')}\nSession ID: {key}")
                 self.pairs.setItem(row, column, item)
-                if tuple(pair) in selected:
-                    item.setSelected(True)
-        self.pairs.verticalScrollBar().setValue(scroll)
+        self.pairs.setSortingEnabled(sorting)
+        restore_selection(self.pairs, selection)
+        self.update_selection_actions()
 
     def render_messages(self):
-        selected = {self.messages.item(i.row(), 0).data(Qt.ItemDataRole.UserRole)
-                    for i in self.messages.selectionModel().selectedRows()}
+        selection = capture_selection(self.messages)
         mode = self.message_filter.currentData()
         finished = {"completed", "failed"}
         visible = [m for m in self.snapshot["messages"]
                    if mode == "all" or (m["state"] in finished if mode == "finished" else m["state"] not in finished)]
+        sorting = self.messages.isSortingEnabled()
+        self.messages.setSortingEnabled(False)
+        self.messages.clearContents()
         self.messages.setRowCount(len(visible))
-        self.messages.clearSelection()
         names = self.session_labels()
+        names["operator"] = "You"
         for row, message in enumerate(visible):
             values = [time.strftime("%H:%M", time.localtime(message["created"])),
-                      f"{names.get(message['sender'], message['sender'])} → {names.get(message['recipient'], message['recipient'])}",
+                      f"{names.get(message['sender'], 'Unavailable session')} → {names.get(message['recipient'], 'Unavailable session')}",
                       message["body"], message["state"]]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value.replace("\n", " "))
                 item.setToolTip(value + ("\n" + message["detail"] if column == 3 else ""))
                 item.setData(Qt.ItemDataRole.UserRole, message["id"])
                 self.messages.setItem(row, column, item)
-            if message["id"] in selected:
-                for column in range(self.messages.columnCount()):
-                    self.messages.item(row, column).setSelected(True)
+        self.messages.setSortingEnabled(sorting)
+        restore_selection(self.messages, selection)
+        self.update_selection_actions()
+
+    def update_selection_actions(self):
+        for table_name, button_name, label in (("sessions", "delete_sessions_button", "Delete selected sessions"),
+                                                ("pairs", "disconnect_button", "Disconnect selected"),
+                                                ("messages", "delete_messages_button", "Delete selected messages")):
+            if hasattr(self, table_name) and hasattr(self, button_name):
+                count = len(selected_ids(getattr(self, table_name)))
+                control = getattr(self, button_name)
+                control.setText(f"{label} ({count})…" if count else label + "…")
+                control.setEnabled(bool(count))
 
     def cleanup_finished_messages(self):
         ids = [m["id"] for m in self.snapshot["messages"] if m["state"] in ("completed", "failed")]
@@ -780,7 +851,7 @@ class Window(QMainWindow):
         dialog.setWindowTitle("Manage session connections")
         dialog.resize(700, 340)
         layout = QVBoxLayout(dialog)
-        note = QLabel("Select connections to remove (Ctrl+A selects all). Messages and sessions are retained; removing a pair stops its future direct agent communication.")
+        note = QLabel("Select connections to disconnect. Ctrl/Cmd-click toggles; Shift-click selects a range; Ctrl/Cmd+A selects all. Sessions and messages are retained.")
         note.setWordWrap(True)
         layout.addWidget(note)
         grid = table(["Session", "Connected session"])
@@ -789,35 +860,49 @@ class Window(QMainWindow):
         grid.setRowCount(len(pairs))
         for row, pair in enumerate(pairs):
             for column, key in enumerate(pair):
-                item = QTableWidgetItem(names.get(key, key))
+                item = QTableWidgetItem(names.get(key, "Unavailable session"))
                 item.setData(Qt.ItemDataRole.UserRole, pair)
                 item.setToolTip(f"{names.get(key, key)}\n{key}")
                 grid.setItem(row, column, item)
         layout.addWidget(grid)
-        remove = button("Remove selected connections…")
+        remove = button("Disconnect selected…")
+        remove.setEnabled(False)
+        def update_controls():
+            count = len(selected_ids(grid))
+            remove.setText(f"Disconnect selected ({count})…" if count else "Disconnect selected…")
+            remove.setEnabled(bool(count))
+        grid.itemSelectionChanged.connect(update_controls)
         def selected():
-            chosen = [grid.item(i.row(), 0).data(Qt.ItemDataRole.UserRole)
-                      for i in grid.selectionModel().selectedRows()]
-            if self.remove_connections(chosen):
-                dialog.accept()
+            chosen = selected_ids(grid)
+            def completed(identities):
+                selection = capture_selection(grid)
+                for row in reversed(range(grid.rowCount())):
+                    pair = tuple(grid.item(row, 0).data(Qt.ItemDataRole.UserRole))
+                    if pair in identities:
+                        grid.removeRow(row)
+                restore_selection(grid, selection)
+                update_controls()
+            self.remove_connections(chosen, callback=completed)
         remove.clicked.connect(selected)
+        grid.deleteRequested.connect(selected)
         layout.addWidget(remove)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(dialog.reject)
         layout.addWidget(close)
         dialog.exec()
 
-    def remove_connections(self, pairs):
-        chosen = [list(pair) for pair in pairs if list(pair) in [list(p) for p in self.snapshot["pairs"]]]
+    def remove_connections(self, pairs, callback=None):
+        available = Counter(tuple(pair) for pair in self.snapshot["pairs"])
+        chosen = list(dict.fromkeys(tuple(pair) for pair in pairs if available[tuple(pair)] == 1))
         if not chosen:
             return False
-        if QMessageBox.question(self, "Remove connections",
-                                f"Remove {len(chosen)} selected connection(s)? Sessions and messages are retained. Future direct agent communication on these pairs will be disabled.",
+        if QMessageBox.question(self, "Disconnect sessions",
+                                f"Disconnect {len(chosen)} selected connection(s)? Sessions and messages are retained. Future direct agent communication on these pairs will be disabled.",
                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return False
-        for a, b in chosen:
-            self.rpc("pair", a=a, b=b, enabled=False)
+        self.rpc_batch("pair", [(pair, {"a": pair[0], "b": pair[1], "enabled": False}) for pair in chosen],
+                       "Disconnect sessions", callback=callback)
         return True
 
     def draft_changed(self, *args):
@@ -946,16 +1031,34 @@ class Window(QMainWindow):
         client = self.client
         self.job(lambda: {"application": doctor(), "broker": client.call("ping") if client else "disconnected"}, done)
 
+    def web_access(self):
+        from .web_access import WebAccessDialog
+        WebAccessDialog(self.prism, self).exec()
+
+    def restore_web_access(self):
+        if self._web_restore_checked or self.closed:
+            return
+        self._web_restore_checked = True
+        from .web_access import restore_web_access
+        restore_web_access(self.prism, self)
+
     def message_menu(self, point):
         item = self.messages.itemAt(point)
         if not item:
             return
-        message = next(m for m in self.snapshot["messages"] if m["id"] == item.data(Qt.ItemDataRole.UserRole))
+        if not item.isSelected():
+            self.messages.selectRow(item.row())
+        identities = selected_ids(self.messages)
+        message = next((m for m in self.snapshot["messages"] if m["id"] == item.data(Qt.ItemDataRole.UserRole)), None)
+        if message is None or message["id"] not in identities:
+            return
         menu = QMenu(self)
         menu.addAction("View message", lambda: QMessageBox.information(self, "Message", message["body"] + "\n\n" + message["detail"]))
-        if message["state"] == "held":
-            menu.addAction("Release held message", lambda: self.rpc("release", message=message["id"]))
-        menu.addAction("Delete message…", lambda: self.delete_messages([message["id"]]))
+        held = [m["id"] for m in self.snapshot["messages"] if m["id"] in identities and m["state"] == "held"]
+        if held:
+            menu.addAction(f"Release selected held messages ({len(held)})", lambda: self.rpc_batch(
+                "release", [(key, {"message": key}) for key in held], "Release held messages"))
+        menu.addAction(f"Delete selected messages ({len(identities)})…", lambda: self.delete_messages(identities))
         menu.exec(self.messages.viewport().mapToGlobal(point))
 
     def select_recipient(self, key):
@@ -977,9 +1080,7 @@ class Window(QMainWindow):
             self.rpc("pair", a=self.source.currentData(), b=self.target.currentData())
 
     def remove_pair(self):
-        pairs = [self.pairs.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
-                 for index in self.pairs.selectionModel().selectedRows()]
-        self.remove_connections(pairs)
+        self.remove_connections(selected_ids(self.pairs))
 
     def refresh(self):
         if not self.client:
@@ -1063,14 +1164,17 @@ class Window(QMainWindow):
     def delete_session(self, key):
         self.delete_sessions([key])
 
+    def session_action_ids(self, key):
+        identities = selected_ids(self.sessions)
+        return identities if key in identities else [key]
+
     def delete_selected_sessions(self):
-        keys = [self.sessions.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
-                for index in self.sessions.selectionModel().selectedRows()]
-        self.delete_sessions(keys)
+        self.delete_sessions(selected_ids(self.sessions))
 
     def delete_sessions(self, keys):
         # Capture IDs before confirmation: sorting/polling must not retarget DEL.
-        selected = [s for s in self.snapshot["sessions"] if s["id"] in set(keys)]
+        available = Counter(s["id"] for s in self.snapshot["sessions"])
+        selected = [s for s in self.snapshot["sessions"] if s["id"] in set(keys) and available[s["id"]] == 1]
         if not selected:
             return
         question = QMessageBox(self)
@@ -1088,8 +1192,8 @@ class Window(QMainWindow):
         question.setDefaultButton(QMessageBox.StandardButton.No)
         question.setEscapeButton(QMessageBox.StandardButton.No)
         if question.exec() == QMessageBox.StandardButton.Yes:
-            for session in selected:
-                self.rpc("delete_session", session=session["id"], confirmed=True)
+            self.rpc_batch("delete_session", [(session["id"], {"session": session["id"], "confirmed": True})
+                                               for session in selected], "Delete sessions")
 
     def focus_session_item(self, item):
         key = item.data(Qt.ItemDataRole.UserRole)
@@ -1118,19 +1222,19 @@ class Window(QMainWindow):
         screens = QApplication.screens()
         screen = next((s for s in screens if s.name() == self.monitors.currentText()), self.screen())
         area = screen.availableGeometry()
-        keys = [self.sessions.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
-                for index in self.sessions.selectionModel().selectedRows()]
+        keys = selected_ids(self.sessions)
         self.rpc(action, sessions=keys, area=asdict(Rect(area.x(), area.y(), area.width(), area.height())),
                  monitor=screen.name(), **extra)
 
     def delete_messages(self, ids=None):
         if not isinstance(ids, list):
-            ids = [self.messages.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
-                   for index in self.messages.selectionModel().selectedRows()]
+            ids = selected_ids(self.messages)
+        available = Counter(message["id"] for message in self.snapshot["messages"])
+        ids = list(dict.fromkeys(identity for identity in ids if available[identity] == 1))
         if not ids:
             return
         if QMessageBox.question(self, "Delete messages",
-                                f"Delete {len(ids)} selected message(s) from Visor? "
+                                f"Delete {len(ids)} selected message(s) from VISOR? "
                                 "Queued messages will be cancelled. Anything already sent "
                                 "cannot be retracted from the receiving session.",
                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -1299,18 +1403,6 @@ class Window(QMainWindow):
             target.setCursor(shape)
 
     def eventFilter(self, watched, event):
-        if (watched in (self.messages, self.messages.viewport())
-                and event.type() == QEvent.Type.KeyPress
-                and event.key() == Qt.Key.Key_Delete and event.modifiers() == Qt.KeyboardModifier.NoModifier):
-            if not event.isAutoRepeat():
-                self.delete_messages()
-            return True
-        if (watched in (self.sessions, self.sessions.viewport())
-                and event.type() == QEvent.Type.KeyPress
-                and event.key() == Qt.Key.Key_Delete and event.modifiers() == Qt.KeyboardModifier.NoModifier):
-            if not event.isAutoRepeat():
-                self.delete_selected_sessions()
-            return True
         own_widget = isinstance(watched, QWidget) and QWidget.window(watched) is self
         if own_widget and event.type() == QEvent.Type.Show:
             watched.setMouseTracking(True)
@@ -1417,6 +1509,7 @@ def launch(root, smoke=False, discover=False):
         QTimer.singleShot(300, finish)
     else:
         window.connect_broker()
+        QTimer.singleShot(0, window.restore_web_access)
     try:
         result = app.exec()
     finally:

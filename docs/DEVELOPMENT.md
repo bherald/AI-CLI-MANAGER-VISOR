@@ -196,3 +196,20 @@ alone does not establish running-recipient availability. The designated runtime
 owner must separately prove supported attachment and one bounded real recipient
 ACK plus explicit reply before claiming live two-way acceptance. Source tests and
 prepared commands do not claim that runtime step has happened.
+
+## Optional VISOR and Prism web surface
+
+`visor-console --web` (alias `--prism-web`) serves the authenticated Sessions and
+Prism views. It defaults to loopback and a free port; an explicit `--web-host`
+chooses a specific LAN/VPN IP and `--web-port` retains a browser origin across
+restarts. The running VISOR broker supplies data through fixed APIs. The native
+Web access dialog supplies Start/Stop controls without automatic startup.
+
+Static HTML/CSS/JavaScript is packaged through setuptools data and PyInstaller
+resources on each desktop OS. Source browser checks use an installed Chrome
+with a temporary profile and synthetic state, and skip that check when Chrome
+is unavailable. `scripts/verify_prism_package.py PATH-TO-CONSOLE` validates the
+frozen combined assets, scoped APIs, fixed send/receipt routes and exact retries.
+It is included in extracted native-package acceptance and makes no model calls.
+
+The current authoring contract revision is exposed through `activity_catalog`; `activity_validate` uses the runtime validator plus read-only revision/ownership/asset checks. Tests exercise actual scoped MCP stdio and CLI processes. See [agent contract](PRISM_AGENTS.md), [web operations](WEB_ACCESS.md) and `tests/test_activity_authoring.py`.

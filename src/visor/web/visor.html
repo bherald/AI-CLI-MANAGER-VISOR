@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Sessions · VISOR</title>
+  <link rel="stylesheet" href="/visor.css">
+  <script src="/visor.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#conversation">Skip to messages</a>
+  <header class="app-header">
+    <div class="brand">VISOR <span id="version" class="muted"></span></div>
+    <nav aria-label="Workspace"><a href="/visor" aria-current="page">Sessions</a><a href="/">Prism</a></nav>
+    <div class="header-actions"><span id="connection" class="muted" role="status">Connecting…</span><button id="refresh" type="button">Refresh</button><button id="lock" type="button">Lock</button></div>
+  </header>
+  <p id="notice" class="notice" role="status" aria-live="polite"></p>
+  <main class="workspace">
+    <aside class="panel sessions-panel" aria-labelledby="sessions-heading">
+      <div class="panel-heading"><h1 id="sessions-heading">Sessions</h1><span id="session-count" class="muted"></span></div>
+      <label class="search-label" for="search">Find a session</label><input id="search" type="search" placeholder="Name, provider or project" autocomplete="off">
+      <div id="sessions" class="sessions" role="list" aria-label="Available sessions"></div>
+      <details class="connections"><summary>Session connections</summary><p id="agent-status" class="muted"></p><div id="pairs"></div></details>
+    </aside>
+    <section id="conversation" class="panel conversation-panel" tabindex="-1" aria-labelledby="session-heading">
+      <div class="panel-heading conversation-heading"><div><h2 id="session-heading">Choose a session</h2><p id="session-description" class="muted"></p></div><label class="filter-label"><span class="sr-only">Filter messages</span><select id="message-filter"><option value="all">All messages</option><option value="inbox">Session inbox</option><option value="outbox">From session</option></select></label></div>
+      <div id="messages" class="messages" role="region" aria-label="Recent messages" tabindex="0"><p class="empty">Choose a session to review recent messages.</p></div>
+      <form id="composer" class="composer">
+        <div class="panel-heading"><label for="message-body" id="compose-label">Message</label><span id="character-count" class="muted">0 / 16000</span></div>
+        <p id="compose-recipient" class="muted"></p>
+        <textarea id="message-body" maxlength="16000" rows="4" placeholder="Write a message to the selected session…" required></textarea>
+        <p id="pending-note" class="pending-note" hidden>Receipt unconfirmed. Retry preserves this exact message. Your separate draft is kept.</p>
+        <div class="compose-actions"><span id="compose-status" class="muted" aria-live="polite">Drafts stay in this browser.</span><button id="clear-retry" type="button" hidden>Clear saved retry…</button><button id="send" class="primary" type="submit" disabled>Send message</button></div>
+      </form>
+    </section>
+    <aside class="panel receipt-panel" aria-labelledby="receipt-heading"><div class="panel-heading"><h2 id="receipt-heading">Message receipt</h2></div><div id="receipt"><p class="empty">Select a message from you to inspect its exact receipt and reply.</p></div></aside>
+  </main>
+  <footer>Private operator view · Reviewing messages does not mark them read.</footer>
+  <dialog id="clear-dialog" aria-labelledby="clear-heading"><form method="dialog"><h2 id="clear-heading">Clear saved retry?</h2><p>This clears only this browser’s retry. The message may already have been accepted. Sending it again as a new message can create a duplicate.</p><div class="dialog-actions"><button value="cancel" autofocus>No, keep retry</button><button value="clear" class="danger">Clear retry</button></div></form></dialog>
+</body>
+</html>

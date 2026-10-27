@@ -120,7 +120,7 @@ class ActivityUICase(unittest.TestCase):
         self.assertTrue(window.actions_bar.isVisible())
         self.assertLess(window.actions_bar.height(), 40)
         self.assertLess(window.area.height(), collapsed_height)
-        self.assertEqual(len(window.actions_bar.actions()), 7)
+        self.assertEqual(len(window.actions_bar.actions()), 12)
         window.save_layout()
         self.assertTrue(json.loads(window.layout_path.read_text())["actions_expanded"])
         window.actions_toggle.click()

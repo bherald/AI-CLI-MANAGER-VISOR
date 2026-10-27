@@ -106,3 +106,27 @@ These are pending manual acceptance unless a dated platform receipt explicitly r
 - Type an unfinished operator draft, change its recipient, restart the supervisor and verify both. Remove that recipient and verify the draft cannot silently target another session.
 - New terminal appearance: Ubuntu/xterm custom monospace font at 12/16 points; Windows existing named/GUID profile with distinct font; Mac existing named Terminal profile with distinct font. Check cwd, literal arguments, launch identity, Focus and close protection remain correct. An unavailable Mac profile must fail before launching a provider.
 - Backup/recovery: private paths and ACLs, snapshot during activity, retention, deliberate offline restore with held/uncertain sends, old credentials invalidated and external links cleared. Refuse restore while broker/UI/helpers remain active. Never use real provider-history deletion for this fixture.
+
+## Prism 1.5.0 review
+
+Use disposable boards and records for destructive checks.
+
+1. Open two Prism boards. Verify one resizable workspace, wide previous/next targets, readable connected names, minimize/maximize and no focus stealing during ordinary updates.
+2. Hide one board, update it from its session and restart VISOR. It remains dismissed until an operator explicitly reopens it. Close or delete a board without stopping its provider sessions.
+3. Verify secondary card/board actions start closed; question input and declared direct controls remain usable. Resize gadgets: buttons, labels and charts never overlap. Check unsent text, sketch, reply and control retries through refresh/restart.
+4. Select grid rows by click, Ctrl/Cmd, Shift and Ctrl/Cmd+A, then refresh/sort/filter. Bulk actions target the retained visible selection. Delete defaults No and shows the selected count; partial failures are reported.
+5. Render the rich component catalog, safe HTML, emoji and PNG/JPG. Try both themes, keyboard focus, scaling and layout undo/redo/snap. A display or input receipt never implies task completion or approval.
+6. Open the authenticated browser view. Review desktop canvas and narrow phone/tablet reflow, keyboard/touch controls, reduced motion and light/dark themes. Retry a lost input receipt with the exact saved request. Verify unauthenticated/cross-origin access is refused.
+
+Local synthetic Chrome viewport checks do not replace physical phone/tablet,
+screen-reader or native Windows/Mac acceptance.
+
+## 1.5.0 table/agent add-on
+
+- Render `examples/prism/styled-project.json` in both themes. Verify colored/thick/dashed borders, header/row/cell overrides, badges and literal tooltips.
+- Sort numeric cells, filter rows, select with modifiers and copy selected visible rows. Update/reorder data using stable row IDs; selection, widths, filter, sort and scroll persist without emitting input events.
+- Shrink a native card with a gadget, direct action, stale cue and help. Its full content scrolls into view; controls and graphics remain separate. Check the browser at phone/tablet widths and in canvas mode.
+- Open the plain help text; cycle ready/loading/empty/error/stale metadata. Source/time is optional detail; no fresh/verified result is invented. Invalid and out-of-range timestamps fail cleanly.
+- Use a session credential through real MCP stdio and CLI: discover schemas/presets, preflight without writes, publish/update with exact revision/receipt, receive typed input and acknowledge read. Wrong ownership, changed access, invalid assets/styles and actor forgery are refused.
+- Review the optional service's Start/Stop, default-off state, private links, fixed routes and broker shutdown behavior against `WEB_ACCESS.md`.
+- With the GUI-owned web server active, close VISOR and relaunch: one prompt offers the exact previous IP/port, defaults No and starts no socket before the answer. No stays off; Yes starts with a new token and does not launch a browser. Stop before exit suppresses the reminder. Binding failure stays off. CLI-owned listeners remain independently managed; smoke mode skips prompting.

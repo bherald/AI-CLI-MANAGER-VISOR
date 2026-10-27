@@ -1,3 +1,14 @@
+# Current local review candidate
+
+**1.5.0**, build `2026-10-27-prism-table-agent-ui-r4`, is under local review.
+The new single Prism workspace, rich components, typed events, responsive browser
+and multi-row grid actions are described in [RELEASE_1_5_0.md](RELEASE_1_5_0.md).
+Local Linux package checks and desktop delivery passed, including the existing
+helper upgrade and frozen combined web checks. Web access is off by default.
+Public publication is pending operator approval. Earlier release evidence below
+applies to those earlier versions; it does not establish this candidate's native
+Windows/Mac or phone/tablet acceptance.
+
 # Beta status and evidence
 
 Release: **1.4.1 beta**, tag `v1.4.1-beta.2`. See the

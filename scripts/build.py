@@ -63,6 +63,7 @@ for name, windowed in (("visor", True), ("visor-console", False)):
             "--workpath", str(root / "build" / name), "--specpath", str(root / "build"),
             "--hidden-import", "visor.ui", "--hidden-import", "PySide6.QtWidgets",
             "--hidden-import", "PySide6.QtCore", "--hidden-import", "PySide6.QtGui"]
+    args += ["--add-data", str(root / "src/visor/web") + os.pathsep + "visor/web"]
     if windowed and sys.platform in ("win32", "darwin"):
         args.append("--windowed")
     if windowed and sys.platform == "darwin":
@@ -125,7 +126,7 @@ binary_root = app if sys.platform == "darwin" else destination
 (resources / "native-binaries.json").write_text(json.dumps({"binaries": native_inventory(binary_root),
     "hash_scope": "before code signing" if sys.platform == "darwin" else "packaged files",
     "review_status": "Inventory only; platform/native dependency redistribution review remains required"}, indent=2), encoding="utf-8")
-manifest = {"application": "VISOR", "version": "1.4.1", "release_status": "unsigned beta",
+manifest = {"application": "VISOR", "version": "1.5.0", "release_status": "unsigned beta",
             "os": platform.system(), "architecture": platform.machine(), "python": platform.python_version(),
             "dependencies": sorted(inventory, key=lambda item: item["name"].lower()),
             "upstream_qt_notices": qt_notices, "native_inventory": "native-binaries.json",
@@ -149,7 +150,7 @@ subprocess.run([str(smoke_exe), "--smoke-test", "--data-dir", str(smoke)],
                cwd=root, env={**env, "QT_QPA_PLATFORM": "offscreen"}, timeout=45, check=True)
 if not (smoke / "ui-smoke.png").is_file():
     raise SystemExit("Packaged UI did not render its smoke-test image")
-archive_name = f"visor-1.4.1-{platform.system().lower()}-{platform.machine().lower()}"
+archive_name = f"visor-1.5.0-{platform.system().lower()}-{platform.machine().lower()}"
 archive = create_archive(app if sys.platform == "darwin" else destination,
                          output / archive_name, windows=os.name == "nt")
 (output / "latest-build.json").write_text(json.dumps({"archive": archive.name,

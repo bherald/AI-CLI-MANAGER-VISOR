@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "id": "customer-portal",
+  "title": "Customer portal launch",
+  "revision": 1,
+  "cards": [
+    {
+      "id": "gauge-1",
+      "kind": "gauge",
+      "title": "Readiness",
+      "value": 95,
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "detail": "19 of 20 release checks passed",
+      "geometry": [
+        20,
+        20,
+        340,
+        280
+      ],
+      "actions": [
+        {
+          "id": "view-checks",
+          "label": "View checks"
+        }
+      ],
+      "color": "#67c5c1"
+    },
+    {
+      "id": "table-2",
+      "kind": "table",
+      "title": "Next actions",
+      "columns": [
+        "Next action",
+        "Owner",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Retest billing fix",
+          "Quality review",
+          "Ready"
+        ],
+        [
+          "Review rollout plan",
+          "Release lead",
+          "Today"
+        ],
+        [
+          "Confirm support guide",
+          "Support",
+          "In review"
+        ]
+      ],
+      "geometry": [
+        380,
+        20,
+        340,
+        280
+      ]
+    },
+    {
+      "id": "sparkline-3",
+      "kind": "sparkline",
+      "title": "Service health",
+      "values": [
+        260,
+        240,
+        230,
+        245,
+        225,
+        235,
+        240
+      ],
+      "unit": "ms",
+      "label": "Response time · latest 240 ms",
+      "geometry": [
+        740,
+        20,
+        340,
+        280
+      ]
+    },
+    {
+      "id": "decision-brief",
+      "kind": "text",
+      "title": "Decision brief",
+      "geometry": [
+        20,
+        320,
+        340,
+        280
+      ],
+      "html": "<h3>Ready for final review</h3><p>The billing fix is merged and the package checks passed. Quality review is retesting one remaining scenario.</p><p><b>Decision:</b> approve the staged rollout after the final retest.</p><p>✅ Evidence attached · next review at 3:00 pm</p>",
+      "actions": [
+        {
+          "id": "request-retest",
+          "label": "Request retest"
+        }
+      ]
+    },
+    {
+      "id": "meter-5",
+      "kind": "meter",
+      "title": "Capacity",
+      "value": 42,
+      "min": 0,
+      "max": 100,
+      "unit": "%",
+      "geometry": [
+        380,
+        320,
+        340,
+        280
+      ],
+      "detail": "Room for the staged rollout",
+      "color": "#b6a1de"
+    },
+    {
+      "id": "arrow-6",
+      "kind": "arrow",
+      "title": "Next milestone",
+      "direction": "right",
+      "text": "Final retest → review → staged rollout",
+      "geometry": [
+        740,
+        320,
+        340,
+        280
+      ],
+      "color": "#e3b66b"
+    }
+  ],
+  "updated_at": "2026-10-27T17:30:00+00:00"
+}

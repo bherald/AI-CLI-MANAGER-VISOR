@@ -2,7 +2,7 @@
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. Use the supervisor to find and resume exact sessions, bring terminals forward, connect selected agents, and follow their coordination messages through delivery, acknowledgment and completion. Session communication and its local message history are a core part of VISOR, alongside terminal management and graceful wrap-up.
 
-**1.4.1 beta — compact Prism and discovery fixes.** See the [versioned release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.2) for downloads, checksums and exact platform build results. The local Linux package passed extracted-package checks and is linked to the desktop shortcut; see the [candidate evidence](docs/RELEASE_1_4_1.md) for delivery results. The release remains an evaluation beta. Prior Windows/Linux build and desktop evidence does not establish interactive acceptance of this candidate. **macOS is experimental: earlier hosted Apple silicon and Intel builds and package checks pass; interactive desktop testing remains unverified.** Changing the release label to beta does not certify every platform or feature. See [platform evidence](docs/STATUS.md), [known limits](docs/ROADMAP.md), and [beta release notes](docs/RELEASE_NOTES.md).
+**1.5.0 local review candidate — one Prism workspace, rich controls and optional VISOR + Prism web access.** The candidate adds one desktop home for all boards, readable session names, collapsed card actions, multi-row selection, a portable gadget catalog and an optional combined sessions/messages/Prism view for phone, tablet and browser. The additive table/agent work keeps version 1.5.0. See [what changed and validation](docs/RELEASE_1_5_0.md) and the [Prism design](docs/PRISM_DESIGN.md). Public publication is pending operator approval. The latest published release is [1.4.1 beta 2](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.2). Native Windows/Mac, real-device and complete accessibility acceptance of this candidate remain pending.
 
 Published packages are listed under [GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases). Exit an older supervisor before launching a new download; extract and keep the complete package directory together. The title and **About / diagnostics** identify the running version and executable.
 
@@ -10,15 +10,23 @@ Source is MIT licensed. Provider accounts, provider software and their normal pe
 
 ## See VISOR and Prism
 
-VISOR keeps sessions, connections and coordination messages together. Prism gives you a shared workspace for notes, pictures, charts, diagrams, questions and sketches.
+VISOR keeps sessions, connections and coordination messages together. Prism keeps shared boards in one workspace, with notes, pictures, charts, diagrams, questions, sketches, gauges and typed interactive controls. Optional templates help agents start quickly; freeform boards remain supported.
 
 ![VISOR main window with example Codex and Claude sessions, connections and messages](docs/images/visor-main.png)
 
 *Main VISOR window with illustrative sessions and messages. No live sessions are shown.*
 
-![Prism source preview with compact header, collapsed Actions, notes, drawing, picture and question](docs/images/prism-workspace.png)
+![Prism 1.5.0 workspace with compact navigation, connected session names and rich project cards](docs/images/prism-workspace.png)
 
-*Prism 1.4.1 source preview: compact header, collapsed Actions and a single-line footer. All card content is illustrative; no live sessions are shown.*
+*Prism 1.5.0 synthetic source preview: one board workspace, rich gadgets, collapsed actions and a single-line footer. All card content is illustrative; no live sessions are shown.*
+
+![Prism styled release tables with different borders, badges, filters and contextual help](docs/images/prism-tables.png)
+
+*Current 1.5.0 table styling and data cues, captured from the native UI with synthetic data.*
+
+![Optional VISOR browser interface with readable sessions, operator messages and exact receipts](docs/images/visor-web.png)
+
+*Optional web access, captured from the current renderer using synthetic data. [VISOR phone view](docs/images/visor-web-mobile.png), [Prism browser](docs/images/prism-web.png), [Prism phone view](docs/images/prism-web-mobile.png). Web access starts off.*
 
 ## What you can do
 
@@ -81,10 +89,10 @@ separate **Connected sessions** and **Messages** panels. Compact rows, sortable
 columns and description search help with longer saved-session lists. Descriptions
 come from existing Codex previews or Claude transcript metadata; custom names are
 kept and no model request is made to summarize your history. Connected pairs have
-a scrollable table; matching session names show a provider/session identifier.
+a scrollable table; matching session names use readable provider/project labels.
 The communication area scrolls when the window is too short to show every control.
 
-Select session rows and press **Delete** for a **Yes/No** permanent-delete
+Click to select a row, Ctrl/Cmd-click to toggle rows, Shift-click for a range, or Ctrl/Cmd+A for all visible rows. Selection follows stable record IDs across refresh and sorting. Actions apply to selected rows and report partial failures. Select session rows and press **Delete** for a **Yes/No** permanent-delete
 confirmation, defaulting to **No**. This uses the same exact-provider and managed
 terminal checks as the row menu. Deleting a session also removes its provider
 conversation; deleting a coordination message does not.
@@ -94,7 +102,7 @@ conversation; deleting a coordination message does not.
 - **Focus** verifies terminal/helper identity, then activates from the supervisor UI. A unique directory alone is never used to identify a terminal. For an existing external terminal, use **Link external terminal for Focus…** in the session menu, choose a supported native window and confirm the link. The link focuses the window; check its selected tab. It does not establish provider/process ownership, so it cannot grant arrangement or deletion privileges. Unlink it before resuming or deleting that session.
 - Drag edges/corners to resize the supervisor. Flexible tables, columns, splitter and composer fit the available space; minimum size, truncation and scrolling keep actions accessible. The middle title button restores the default size, minimize keeps work running, and X opens the exit choices.
 - Session menus remain stable during periodic refresh. They provide Rename, Copy session ID, agent participation, Wrap up, **Delete session…**, and stale-window reconciliation.
-- Arrangement acts only on selected, verified managed windows. Use Grid, Columns, Rows, Cascade, Save layout or Restore. Platform limitations are reported rather than guessed around.
+- Arrangement acts only on selected, verified managed windows. Use Grid, Columns, Stacked, Cascade, Save layout or Restore. Platform limitations are reported rather than guessed around.
 
 **Delete session…** is permanent: after confirmation it immediately closes the verified linked terminal without Wrap up, deletes the provider conversation, then purges the session's VISOR messages, credentials, connections and layout entry. Running work can be lost; project source files remain. Refresh/restart cannot resurrect the deleted entry. Failure to verify/close a running terminal or delete provider history produces an error and preserves the VISOR record for retry. An externally launched live terminal must be closed first because its ownership is not yet associated.
 
@@ -263,12 +271,12 @@ See the [enhancement checklist](docs/ENHANCEMENTS.md) and [native acceptance che
 
 If this work has helped you, you may leave an [optional one-time tip](https://github.com/sponsors/bherald?frequency=one-time). Tips help offset hardware, storage, electricity, hosting, and testing. A tip does not purchase support, consulting, access, priority, or any deliverable.
 
-## Prism windows
+## Prism boards
 
-Use shared native windows for notes, pictures, diagrams, charts, questions and freehand drawings. Codex and Claude sessions can contribute through scoped CLI/MCP access. See [Prism windows](PRISM.md) for setup, sharing and recovery.
+Use shared boards in one native workspace for notes, pictures, diagrams, charts, questions and freehand drawings. Codex and Claude sessions can contribute through scoped CLI/MCP access. See [Prism boards](PRISM.md) for setup, sharing and recovery.
 
 The compact header shows only **Title - Updated: MM/DD/YYYY hh:mm am/pm**, using
-the system timezone. **Actions** expands a short toolbar; collapse it to give the
+the system timezone. **Board actions** expands a short toolbar; collapse it to give the
 cards more space. The footer uses one concise line in 8pt type. Owner, revision
 and contributor details remain available in the heading tooltip.
 
@@ -278,3 +286,11 @@ an existing UUID with a requested name applies that name as an alias. Legacy nam
 are preserved as possible aliases because their original source was not recorded.
 Claude discovery clears stale live-status claims while preserving saved history
 and fresh managed hook evidence; unavailable discovery is shown as unknown.
+
+## Rich Prism boards and browser access
+
+Use **Prism** for the single resizable board workspace. Wide previous/next buttons switch boards; **Board actions** hides/shows boards and opens the browser view. **Card actions** contains secondary editing and status details. Declared gadget controls stay in reserved rows outside the graphic. Closing/hiding preserves board content and provider sessions.
+
+Web access is **off by default**. If it was on when VISOR closed, the next launch offers to start it again on the previous address/port, defaulting to **No**. Choose **Web access…** in VISOR to Start/Stop it, select a local/LAN/VPN address and open its private Sessions or Prism link. The Sessions view includes status, recent messages, a draft-preserving operator composer and exact receipts/replies. Use **Open in browser** for Prism on the current server (starting loopback only when no server is running), or `visor-console --web --web-host YOUR-LAN-OR-VPN-IP --web-port 8765` for an explicitly chosen network interface. Treat its private URL as operator access; use a protected network/HTTPS route for remote devices. The browser receives a separate view token, never the broker credential. Mobile access uses the responsive browser UI. See [web setup and operations](docs/WEB_ACCESS.md), [agent MCP/CLI workflow](docs/PRISM_AGENTS.md), [Prism authoring](PRISM.md), [component design and platform references](docs/PRISM_DESIGN.md), and [release evidence](docs/RELEASE_1_5_0.md).
+
+Prism tables support portable border colors/thickness/styles, row/cell formatting, status badges, help, sorting/filtering and selected-row copying. Stable row IDs preserve selection through live updates. Agents discover bounded schemas/presets and run read-only preflight before publication. [Styled table example](examples/prism/styled-project.json).

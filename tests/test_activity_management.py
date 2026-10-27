@@ -91,7 +91,7 @@ class PrismManagementCase(unittest.TestCase):
         self.assertIsNone(dialog.selected_id())
         self.assertFalse(dialog.delete_button.isEnabled())
         self.assertEqual([dialog.table.item(0, i).text() for i in range(5)],
-                         ["<b>Exact title</b>\nboard-a", "claude:one", "2026-10-25T18:00:00Z", "3", "close"])
+                         ["<b>Exact title</b>", "Session unavailable", "2026-10-25T18:00:00Z", "3", "close"])
         self.select(dialog, 1)
         self.assertEqual(dialog.selected_id(), "board-b")
         self.assertTrue(dialog.delete_button.isEnabled())

@@ -16,12 +16,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
 )
 
 from .paths import write_private
+from .selection import RowTable, capture_selection, restore_selection, selected_ids
 
 RETENTION = ("Deletes this saved board, its revision history, replies and membership, and closes its Prism view. "
              "Local layout and drafts for this board are removed. Shared image assets and existing backups are retained. "
@@ -32,7 +32,7 @@ class PrismManagementDialog(QDialog):
     def __init__(self, supervisor):
         super().__init__(supervisor)
         self.supervisor = supervisor
-        self.setWindowTitle("Manage Prism windows")
+        self.setWindowTitle("Manage Prism boards")
         self.resize(960, 470)
         self.pending_path = Path(supervisor.root) / "prism-management.json"
         self.pending, self.boards = {}, {}
@@ -40,19 +40,21 @@ class PrismManagementDialog(QDialog):
         self.loaded = False
         self.pending_error = ""
         layout = QVBoxLayout(self)
-        note = QLabel("Select a saved Prism board to delete. Nothing is selected automatically.\n" + RETENTION)
+        note = QLabel("Select saved Prism boards. Ctrl/Cmd-click toggles; Shift-click selects a range; Ctrl/Cmd+A selects all.\n" + RETENTION)
         note.setTextFormat(Qt.TextFormat.PlainText)
         note.setWordWrap(True)
         layout.addWidget(note)
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["Title / board ID", "Owner", "Updated", "Revision", "Requested view", "Deletion"])
+        self.table = RowTable(0, 6)
+        self.table.setHorizontalHeaderLabels(["Prism board", "Owner", "Updated", "Revision", "Requested view", "Deletion"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAccessibleName("Saved Prism boards")
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.itemSelectionChanged.connect(self.update_controls)
+        self.table.deleteRequested.connect(lambda: self.delete_selected())
+        self.table.setSortingEnabled(True)
+        self.table.sortItems(0, Qt.SortOrder.AscendingOrder)
         layout.addWidget(self.table, 1)
         self.status = QLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
@@ -92,20 +94,23 @@ class PrismManagementDialog(QDialog):
             self.pending_error = "Saved deletion requests could not be read; deletion is disabled: " + str(exc)
 
     def selected_id(self):
-        selected = self.table.selectionModel().selectedRows()
-        return self.table.item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole) if selected else None
+        identities = selected_ids(self.table)
+        return identities[0] if identities else None
 
     def update_controls(self):
-        identity = self.selected_id()
-        pending, board = self.pending.get(identity), self.boards.get(identity)
-        retry = pending and (board is None or board["revision"] == pending["expected_revision"])
-        self.delete_button.setText("Retry same deletion" if retry else "Delete selected…")
-        self.delete_button.setEnabled(bool(identity) and self.loaded and not self.busy and not self.pending_error)
+        identities = selected_ids(self.table)
+        retry = bool(identities) and all(identity in self.pending and (identity not in self.boards
+            or self.boards[identity]["revision"] == self.pending[identity]["expected_revision"]) for identity in identities)
+        self.delete_button.setText(("Retry same deletion" if len(identities) == 1 else f"Retry selected deletions ({len(identities)})")
+                                   if retry else (f"Delete selected boards ({len(identities)})…" if identities else "Delete selected…"))
+        self.delete_button.setEnabled(bool(identities) and self.loaded and not self.busy and not self.pending_error)
         self.reload_button.setEnabled(not self.busy)
 
     def render(self):
-        selected = self.selected_id()
+        selection = capture_selection(self.table)
         identities = list(self.boards) + [key for key in self.pending if key not in self.boards]
+        names = {session["id"]: session["name"] for session in getattr(self.supervisor, "snapshot", {}).get("sessions", [])}
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
         for identity in identities:
             board, pending = self.boards.get(identity), self.pending.get(identity)
@@ -115,16 +120,20 @@ class PrismManagementDialog(QDialog):
             state = "Unconfirmed; retry exact request" if pending else ""
             if pending and board and board["revision"] != pending["expected_revision"]:
                 state = "Revision changed; review again"
-            values = [source["title"] + "\n" + identity, source.get("owner", "—"), source.get("updated", "—"),
+            owner = source.get("owner")
+            values = [source["title"], source.get("owner_name") or names.get(owner, "Session unavailable" if owner else "—"), source.get("updated", "—"),
                       str(source.get("revision", source.get("expected_revision"))),
                       str(source.get("view_action", "Not listed")), state]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, identity)
+                    item.setToolTip("Board ID: " + identity)
+                if column == 1 and owner:
+                    item.setToolTip("Session ID: " + owner)
                 self.table.setItem(row, column, item)
-            if identity == selected:
-                self.table.selectRow(row)
+        self.table.setSortingEnabled(True)
+        restore_selection(self.table, selection)
         self.table.resizeRowsToContents()
         self.update_controls()
 
@@ -151,9 +160,11 @@ class PrismManagementDialog(QDialog):
                             or not isinstance(board.get("id"), str) or not isinstance(board.get("title"), str)
                             or type(board.get("revision")) is not int or board["revision"] < 1 for board in result):
                         raise ValueError("Invalid board list")
+                    if len({board["id"] for board in result}) != len(result):
+                        raise ValueError("Ambiguous board identities; refresh before selecting boards")
                     self.boards = {board["id"]: board for board in result}
                     self.loaded = True
-                    self.status.setText(self.pending_error or (f"{len(result)} saved boards. Select one to manage."
+                    self.status.setText(self.pending_error or (f"{len(result)} saved boards. Select boards to manage."
                                         + (" Unconfirmed deletions remain available for exact retry." if self.pending else "")))
                 except ValueError as exc:
                     self.loaded = False
@@ -170,69 +181,117 @@ class PrismManagementDialog(QDialog):
         box.setInformativeText(RETENTION)
         box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         box.setDefaultButton(QMessageBox.StandardButton.No)
+        box.setEscapeButton(QMessageBox.StandardButton.No)
+        return box.exec() == QMessageBox.StandardButton.Yes
+
+    def confirm_delete_many(self, boards, selected_count):
+        box = QMessageBox(self)
+        box.setWindowTitle("Delete saved Prism boards?")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        names = "\n".join(board["title"] for board in boards[:8])
+        if len(boards) > 8:
+            names += f"\n…and {len(boards) - 8} more"
+        box.setText(f"Delete {selected_count} selected Prism boards?\n\n" + names)
+        box.setDetailedText("\n".join(f"{board['title']} — Board ID: {board['id']} — Revision: {board['revision']}" for board in boards))
+        box.setInformativeText(RETENTION)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        box.setEscapeButton(QMessageBox.StandardButton.No)
         return box.exec() == QMessageBox.StandardButton.Yes
 
     def delete_selected(self):
-        identity = self.selected_id()
-        if not identity or not self.loaded or self.busy or self.pending_error:
+        identities = selected_ids(self.table)
+        if not identities or not self.loaded or self.busy or self.pending_error:
             return
         client = self.supervisor.client
         if client is None:
             self.status.setText("VISOR is disconnected. No deletion was sent.")
             return
-        pending, board = self.pending.get(identity), self.boards.get(identity)
-        if not pending or board and board["revision"] != pending["expected_revision"]:
-            if board is None or not self.confirm_delete(board):
-                return
-            pending = {"id": identity, "title": board["title"], "expected_revision": board["revision"],
-                       "request_id": uuid.uuid4().hex, "confirmed": True}
-        # Commit the exact identity before dispatch. A lost result can be retried
-        # safely even after closing the dialog or restarting the supervisor.
-        updated = {**self.pending, identity: pending}
+        fresh = []
+        for identity in identities:
+            pending, board = self.pending.get(identity), self.boards.get(identity)
+            if not pending or board and board["revision"] != pending["expected_revision"]:
+                if board is None:
+                    return
+                fresh.append(board)
+        if fresh and not (self.confirm_delete(fresh[0]) if len(identities) == 1
+                          else self.confirm_delete_many(fresh, len(identities))):
+            return
+        updated = dict(self.pending)
+        for board in fresh:
+            updated[board["id"]] = {"id": board["id"], "title": board["title"],
+                                    "expected_revision": board["revision"],
+                                    "request_id": uuid.uuid4().hex, "confirmed": True}
+        # Save every exact identity before sending any of the guarded requests.
         try:
             write_private(self.pending_path, {"pending": updated})
         except (OSError, ValueError) as exc:
             self.status.setText("Deletion not sent; unable to save its retry identity: " + str(exc))
             return
         self.pending = updated
-        request = copy.deepcopy(pending)
-        params = {key: request[key] for key in ("id", "expected_revision", "request_id", "confirmed")}
+        requests = [copy.deepcopy(updated[identity]) for identity in identities]
         self.busy = True
         self.update_controls()
-        self.status.setText("Waiting for deletion confirmation for " + identity + "…")
-        def finished(result, error):
-            self.busy = False
-            if (error or not isinstance(result, dict) or result.get("deleted") is not True
-                    or result.get("id") != identity or result.get("revision") != request["expected_revision"]):
-                self.status.setText("Deletion unconfirmed: " + str(error or "Unexpected broker response")
-                                    + ". Retry uses the same saved request. Refresh to review a revision conflict.")
+        completed, errors = [], []
+        details = []
+        needs_poll = False
+
+        def dispatch(index):
+            nonlocal needs_poll
+            if index == len(requests):
+                self.busy = False
+                if len(requests) == 1:
+                    self.status.setText(details[0])
+                else:
+                    self.status.setText(f"Deleted {len(completed)} of {len(requests)} selected Prism boards. "
+                                        "Image assets and backups were retained."
+                                        + (f" {len(errors)} remain selected for review or exact retry.\n" + "\n".join(errors) if errors else ""))
+                if needs_poll:
+                    self.supervisor.poll()
                 self.render()
                 return
-            # Canonical deletion is confirmed. Retain the durable retry identity
-            # until the view and its local drafts are also safely removed.
-            try:
-                self.supervisor.prism.deleted(identity)
-            except (OSError, ValueError) as exc:
-                self.status.setText("Deletion confirmed; local cleanup pending: " + str(exc)
-                                    + ". Retry the same deletion to finish cleanup.")
+            request = requests[index]
+            identity = request["id"]
+            params = {key: request[key] for key in ("id", "expected_revision", "request_id", "confirmed")}
+            self.status.setText(f"Deleting selected Prism boards ({index + 1}/{len(requests)}): {request['title']}…")
+
+            def finished(result, error):
+                nonlocal needs_poll
+                detail = ""
+                if (error or not isinstance(result, dict) or result.get("deleted") is not True
+                        or result.get("id") != identity or result.get("revision") != request["expected_revision"]):
+                    detail = ("Deletion unconfirmed: " + str(error or "Unexpected broker response")
+                              + ". Retry uses the same saved request. Refresh to review a revision conflict.")
+                else:
+                    # Keep durable retry identities until local cleanup is complete.
+                    try:
+                        self.supervisor.prism.deleted(identity)
+                    except (OSError, ValueError) as exc:
+                        detail = ("Deletion confirmed; local cleanup pending: " + str(exc)
+                                  + ". Retry the same deletion to finish cleanup.")
+                    if not detail:
+                        remaining = {key: value for key, value in self.pending.items() if key != identity}
+                        try:
+                            write_private(self.pending_path, {"pending": remaining})
+                            self.pending = remaining
+                        except (OSError, ValueError):
+                            detail = "Deletion confirmed; retry record cleanup failed. Refresh before continuing."
+                        needs_poll = True
+                    if not detail:
+                        completed.append(identity)
+                        self.boards.pop(identity, None)
+                        detail = ("Deleted " + request["title"] + ". Image assets and backups were retained."
+                                  + (" View-file cleanup is pending." if result.get("projection_cleanup") == "pending" else ""))
+                details.append(detail)
+                if identity not in completed:
+                    errors.append(request["title"] + ": " + detail)
                 self.render()
-                return
-            updated = {key: value for key, value in self.pending.items() if key != identity}
-            try:
-                write_private(self.pending_path, {"pending": updated})
-                self.pending = updated
-            except (OSError, ValueError):
-                # The durable request remains safe to retry against the tombstone.
-                self.status.setText("Deletion confirmed; retry record cleanup failed. Refresh before continuing.")
-                self.supervisor.poll()
-                self.render()
-                return
-            self.boards.pop(identity, None)
-            self.status.setText("Deleted " + request["title"] + ". Image assets and backups were retained."
-                                + (" Window-file cleanup is pending." if result.get("projection_cleanup") == "pending" else ""))
-            self.supervisor.poll()
-            self.render()
-        self.supervisor.job(lambda: client.call("activity_delete", **params), finished)
+                dispatch(index + 1)
+
+            self.supervisor.job(lambda: client.call("activity_delete", **params), finished)
+
+        dispatch(0)
 
 
 def manage_prism_windows(supervisor):

@@ -65,7 +65,9 @@ class ActivityStoreTests(unittest.TestCase):
         with self.assertRaises(PolicyError):
             self.service.get(self.b, 'board')
         path = Path(self.service.get(None, 'board')['path'])
-        self.assertEqual(json.loads(path.read_text()), actual['document'])
+        self.assertEqual(json.loads(path.read_text()), {key: value for key, value in actual['document'].items()
+                                                       if key != 'contributor_labels'})
+        self.assertEqual(actual['document']['contributor_labels'], {self.a: 'Alpha'})
         if os.name != 'nt':
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
