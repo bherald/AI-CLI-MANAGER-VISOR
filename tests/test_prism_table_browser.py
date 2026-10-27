@@ -131,6 +131,7 @@ class PrismTableBrowserCase(unittest.TestCase):
                     self.assertEqual(evaluate("rich().querySelectorAll('col')[2].style.width"), "110px")
                     self.assertEqual(evaluate("rich().querySelector('th[data-source-column=\"1\"]').getAttribute('aria-sort')"), "ascending")
                     self.assertEqual(evaluate("[...rich().querySelectorAll('tr[aria-selected=true]')].map(row=>row.querySelector('[data-source-column=\"0\"]').textContent).sort()"), ["Restore", "Security"])
+                    until("rich().querySelector('.table-viewport').scrollTop>0 && rich().querySelector('.table-viewport').scrollLeft>0")
                     self.assertGreater(evaluate("rich().querySelector('.table-viewport').scrollTop"), 0)
                     self.assertGreater(evaluate("rich().querySelector('.table-viewport').scrollLeft"), 0)
                     evaluate("const notes2=document.querySelector('[data-card=\"notes\"]');notes2.querySelector('.card-options').open=true;notes2.querySelector('.card-options .toolbar button').click()")
