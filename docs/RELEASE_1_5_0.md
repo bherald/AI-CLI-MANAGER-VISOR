@@ -1,10 +1,8 @@
-# VISOR 1.5.0 local review candidate
+# VISOR 1.5.0 beta 5
 
 Build: `2026-10-27-prism-table-agent-ui-r5`.
 
-The operator approved local implementation, testing, Linux packaging and desktop
-shortcut delivery. Public source publication, tags and release assets are held
-for a separate approval after review.
+The [beta 5 release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5) and [exact-tag native checks](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/40520947000) are public. All four native jobs passed; interactive and real-device acceptance boundaries remain below.
 
 ## Changes
 
@@ -42,8 +40,8 @@ This packet keeps version **1.5.0**, with the distinct build ID above.
   MCP stdio and CLI tests cover discovery through publication, update and input.
 - [Web operation](WEB_ACCESS.md) and [agent workflow](PRISM_AGENTS.md) guides cover
   startup/lifetime, mobile use, privacy, retries, troubleshooting and ownership.
-- Release screenshots are synthetic captures of this implementation, prepared for
-  replacement on public surfaces only after platform-specific approval.
+- Release screenshots use synthetic data and the current implementation. The
+  repository and public website show the current native and browser views.
 
 VISOR provides reusable UI/web/MCP capabilities; consuming applications own their
 workflows and best practices. Existing consumers retain their domain-specific workflow and hosting ownership.
@@ -72,14 +70,16 @@ terminal helper/worker. The web feature remained off without a GUI TCP listener.
 Automated fixtures use isolated state and synthetic content; no model requests
 are required. Real-device/native-platform acceptance remains separate below.
 
+Beta 5 fixes cross-platform acceptance fixtures: compare IPv6 address values instead of Python-specific formatting, and create owner-private Windows roots before CLI/package tests. The r5 runtime additionally preserves Unicode in machine JSON on legacy Windows consoles.
+
 ## Acceptance boundaries
 
-Linux/X11 is the local review platform. Native Windows/Mac, real iOS/Android
-devices, complete assistive-technology testing and dependency-distribution review
+Linux/X11 is the local review platform. Interactive Windows/Mac desktops, real
+iOS/Android devices, complete assistive-technology testing and dependency-distribution review
 remain open. The browser UI is responsive; this release does not include separate
 native iOS/Android applications. Remote browser access requires an explicitly
 chosen interface and an operator-managed protected network/HTTPS route.
 
 ## Release images and publication
 
-Eight current-renderer screenshots use only synthetic data: native supervisor/empty view, Prism overview/styled tables, and VISOR/Prism desktop/mobile browser views. Native captures are reproducible with `scripts/make_release_images.py --native-only`. Images, README, web/agent guides and checksums are prepared locally; public replacements await operator approval. Existing website/social assets are audited and updated under their own exact platform approval.
+Eight current-renderer screenshots use only synthetic data: native supervisor/empty view, Prism overview/styled tables, and VISOR/Prism desktop/mobile browser views. Native captures are reproducible with `scripts/make_release_images.py --native-only`. Images, README, web/agent guides and checksums are public. The [wphc.us article/gallery](https://www.wphc.us/visor-beta) shows the same implementation and testing limits.

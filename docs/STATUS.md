@@ -1,15 +1,13 @@
-# Current local review candidate
+# Current beta release
 
-**1.5.0**, build `2026-10-27-prism-table-agent-ui-r5`, is under local review.
-The new single Prism workspace, rich components, typed events, responsive browser
-and multi-row grid actions are described in [RELEASE_1_5_0.md](RELEASE_1_5_0.md).
-Local Linux package checks and desktop delivery passed, including the existing
-helper upgrade and frozen combined web checks. Web access is off by default.
-Public publication is pending operator approval. Earlier release evidence below
-applies to those earlier versions; it does not establish this candidate's native
-Windows/Mac or phone/tablet acceptance.
+**VISOR 1.5.0 beta 5** is public, tag `v1.5.0-beta.5`, runtime build `2026-10-27-prism-table-agent-ui-r5`.
+The [release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5) includes checksum-verified Windows, Linux, Apple Silicon Mac and Intel Mac packages plus a sanitized source archive.
+[Exact-tag CI](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/40520947000) passed all four native jobs, including source, build and extracted-package checks. Local Linux/X11 delivery and both web restart choices also passed. Web access remains optional and off by default.
 
-# Beta status and evidence
+Beta 5 corrects cross-platform test fixtures for equivalent IPv6 spellings and private Windows data roots. The r5 runtime additionally preserves Unicode in machine JSON on legacy Windows consoles. Earlier beta tags are retained; no failed platform package was published.
+Interactive Windows/Mac, physical mobile devices, complete accessibility and dependency-distribution acceptance remain open. See [release details](RELEASE_1_5_0.md).
+
+# Earlier beta status and evidence
 
 Release: **1.4.1 beta**, tag `v1.4.1-beta.2`. See the
 [versioned release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.4.1-beta.2)

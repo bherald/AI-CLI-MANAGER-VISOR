@@ -1,3 +1,7 @@
+# 1.5.0 beta 5 — published 2026-10-27
+
+[Download and checksums](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5). Exact-tag source, native-build and extracted-package jobs passed on Windows, Ubuntu, Apple Silicon Mac and Intel Mac. Interactive/native-device limits remain open. Beta 5 fixes test-fixture privacy and IPv6-format assumptions without changing the reviewed runtime build. The feature list below describes the 1.5.0 implementation.
+
 # 1.5.0 local candidate — rich Prism workspace
 
 - Consolidate floating Prism boards into one resizable desktop workspace with wide previous/next controls, a readable board picker and compact connected-session names.
@@ -13,7 +17,7 @@
 - Extend agent and web-service setup/operation documentation; prepare matching synthetic release pictures.
 - Update authoring, design references, examples and release documentation.
 
-Local build/review is authorized. Public source, tag, issue changes and release publication are held for operator approval. See [candidate evidence](RELEASE_1_5_0.md). Native Windows/Mac and real mobile/accessibility acceptance remain separate from Linux tests.
+Public source, the beta 5 release and all four platform packages are available. See [release evidence](RELEASE_1_5_0.md). Interactive Windows/Mac, physical mobile devices and complete accessibility acceptance remain open.
 
 # 1.4.1 beta — compact Prism and discovery fixes
 
