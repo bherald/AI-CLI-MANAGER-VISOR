@@ -15,7 +15,7 @@ sys.path.insert(0, str(root / "src"))
 from visor.broker import Client
 from visor.bundles import extract_archive
 from visor.notices import verify_qt_notices
-from visor.paths import write_private
+from visor.paths import data_dir, write_private
 from visor.process import hidden_options
 
 
@@ -77,8 +77,7 @@ def main():
             raise RuntimeError("Packaged Qt open-source license text is missing")
     if os.name != "nt" and not all(os.access(path, os.X_OK) for path in (exe, gui)):
         raise RuntimeError("Extracted executables lost their executable permission")
-    data = work / "isolated data"
-    data.mkdir(mode=0o700)
+    data = data_dir(str(work / "isolated data"))
     # Smoke rendering must stay unattended even if the previous GUI listener was
     # active. Only a normal launch may offer the explicit restart question.
     preferences = {"web_was_active": True, "web_host": "192.0.2.10", "web_port": 34881}

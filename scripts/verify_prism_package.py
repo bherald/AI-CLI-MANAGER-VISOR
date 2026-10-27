@@ -21,6 +21,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "src"))
 from visor.broker import Client
+from visor.paths import data_dir
 from visor.process import hidden_options
 from visor.store import PolicyError
 
@@ -91,8 +92,7 @@ def verify(executable):
     cache.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="prism-package-acceptance-", dir=cache) as temporary:
         work = Path(temporary)
-        data = work / "isolated data"
-        data.mkdir(mode=0o700)
+        data = data_dir(str(work / "isolated data"))
         provider_path = work / "empty provider path"
         provider_path.mkdir()
         # No provider executable can be discovered, even during periodic refresh.
