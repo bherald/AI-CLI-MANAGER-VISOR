@@ -1,4 +1,10 @@
-# Current beta release
+# Local communication candidate
+
+**VISOR 1.5.0 beta 6**, build `2026-11-01-communication-r6`, is being prepared
+locally. See [the candidate packet](RELEASE_1_5_0_BETA_6.md) for changes and
+validation boundaries. Its source preparation does not install or publish it.
+
+# Current published beta release
 
 **VISOR 1.5.0 beta 5** is public, tag `v1.5.0-beta.5`, runtime build `2026-10-27-prism-table-agent-ui-r5`.
 The [release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5) includes checksum-verified Windows, Linux, Apple Silicon Mac and Intel Mac packages plus a sanitized source archive.

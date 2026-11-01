@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizeGrip,
@@ -47,6 +48,7 @@ from .broker import ensure_broker
 from .layout import Rect
 from .platforms import enable_window_resize, focus_verified
 from .selection import RowTable, capture_selection, restore_selection, selected_ids
+from .store import canonical_uuid, operator_reply_input
 
 STYLE = """
 QWidget { background: #111c24; color: #e1eaf0; font-size: 13px; }
@@ -176,6 +178,11 @@ class Window(QMainWindow):
         self.draft_recipient = None
         self.draft_loading = False
         self.draft_saving = False
+        self.draft_ready = False
+        self.draft_invalid = False
+        self.pending_send = None
+        self.send_after_save = False
+        self.send_busy = False
         self._web_restore_checked = False
         self.setWindowTitle(f"VISOR {__version__}")
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
@@ -347,6 +354,8 @@ class Window(QMainWindow):
             self.message_filter.addItem(name, value)
         self.message_filter.currentIndexChanged.connect(self.render_messages)
         filters.addWidget(self.message_filter)
+        self.inspect_message_button = button("Receipt / reply", self.inspect_selected_message)
+        filters.addWidget(self.inspect_message_button)
         filters.addStretch()
         filters.addWidget(button("Delete finished messages…", self.cleanup_finished_messages))
         messages_layout.addLayout(filters)
@@ -359,6 +368,7 @@ class Window(QMainWindow):
         self.messages.customContextMenuRequested.connect(self.message_menu)
         self.messages.deleteRequested.connect(lambda: self.delete_messages())
         self.messages.itemSelectionChanged.connect(self.update_selection_actions)
+        self.messages.itemDoubleClicked.connect(lambda item: self.inspect_message(item.data(Qt.ItemDataRole.UserRole)))
         messages_layout.addWidget(self.messages, 1)
         self.delete_messages_button = button("Delete selected messages…", self.delete_messages)
         messages_layout.addWidget(self.delete_messages_button)
@@ -367,13 +377,20 @@ class Window(QMainWindow):
         self.recipient.setMinimumWidth(140)
         self.composer = QLineEdit()
         self.composer.setPlaceholderText("Send an operator message…")
-        self.composer.setMaxLength(16000)
+        # QLineEdit counts UTF-16 units; preserve the draft contract's 32768 code points.
+        # The outgoing message still validates the existing 16000-code-point limit.
+        self.composer.setMaxLength(65536)
         self.composer.returnPressed.connect(self.send)
         compose.addWidget(QLabel("To:"))
         compose.addWidget(self.recipient)
         compose.addWidget(self.composer, 1)
-        compose.addWidget(button("Send", self.send, True))
+        self.send_button = button("Send", self.send, True)
+        compose.addWidget(self.send_button)
         messages_layout.addLayout(compose)
+        self.send_notice = QLabel("Reconnect to load the saved draft before sending.")
+        self.send_notice.setWordWrap(True)
+        self.send_notice.setTextFormat(Qt.TextFormat.PlainText)
+        messages_layout.addWidget(self.send_notice)
         note = QLabel("Operator messages always available · Claude live alerts: supervisor menu")
         messages_layout.addWidget(note)
         body.addWidget(self.messages_section, 1)
@@ -400,6 +417,7 @@ class Window(QMainWindow):
         self.draft_timer.timeout.connect(self.save_draft)
         self.composer.textChanged.connect(self.draft_changed)
         self.recipient.currentIndexChanged.connect(self.draft_changed)
+        self.update_send_controls()
         action = QAction("Exit", self)
         action.setShortcut("Alt+F4")
         action.triggered.connect(self.close)
@@ -808,8 +826,9 @@ class Window(QMainWindow):
         selection = capture_selection(self.messages)
         mode = self.message_filter.currentData()
         finished = {"completed", "failed"}
+        attention = {"held", "failed", "delivery_unknown"}
         visible = [m for m in self.snapshot["messages"]
-                   if mode == "all" or (m["state"] in finished if mode == "finished" else m["state"] not in finished)]
+                   if mode == "all" or m["state"] in (finished if mode == "finished" else attention)]
         sorting = self.messages.isSortingEnabled()
         self.messages.setSortingEnabled(False)
         self.messages.clearContents()
@@ -830,6 +849,8 @@ class Window(QMainWindow):
         self.update_selection_actions()
 
     def update_selection_actions(self):
+        if hasattr(self, "inspect_message_button"):
+            self.inspect_message_button.setEnabled(len(selected_ids(self.messages)) == 1)
         for table_name, button_name, label in (("sessions", "delete_sessions_button", "Delete selected sessions"),
                                                 ("pairs", "disconnect_button", "Disconnect selected"),
                                                 ("messages", "delete_messages_button", "Delete selected messages")):
@@ -906,16 +927,31 @@ class Window(QMainWindow):
         return True
 
     def draft_changed(self, *args):
-        if not self.draft_loading:
+        if not self.draft_loading and not self.pending_send and not self.draft_invalid:
             self.draft_dirty = True
             self.draft_recipient = self.recipient.currentData()
             self.draft_timer.start()
 
     def load_draft(self):
         def received(value):
-            if not isinstance(value, dict):
+            try:
+                pending = self.valid_pending_draft(value)
+            except (ValueError, TypeError, KeyError):
+                self.draft_invalid = True
+                self.send_notice.setText("Saved draft is invalid; sending and draft writes are held. The stored draft is preserved.")
+                self.update_send_controls()
                 return
+            if self.pending_send and value != self.draft_value():
+                self.send_notice.setText("The local pending send is retained. Retry the same message to reconcile it.")
+                return
+            if self.draft_dirty and pending and value != self.draft_value():
+                self.draft_invalid = True
+                self.send_notice.setText("A saved pending send conflicts with this draft. Both are preserved; resolve the draft before sending.")
+                self.update_send_controls()
+                return
+            self.draft_ready = True
             if self.draft_dirty:
+                self.update_send_controls()
                 self.save_draft()
                 return
             self.draft_loading = True
@@ -926,23 +962,68 @@ class Window(QMainWindow):
                 self.recipient.setCurrentIndex(index)
             elif value.get("text"):
                 self.recipient.setCurrentIndex(-1)
+            self.pending_send = pending
             self.draft_loading = False
+            self.send_notice.setText("Pending send restored. Retry uses the original recipient, text and request ID." if pending else "")
+            self.update_send_controls()
         self.rpc("message_draft", callback=received)
 
+    @staticmethod
+    def valid_pending_draft(value):
+        if (not isinstance(value, dict) or set(value) not in ({"text", "recipient"}, {"text", "recipient", "pending"})
+                or not isinstance(value["text"], str) or len(value["text"]) > 32768
+                or value["recipient"] is not None and (not isinstance(value["recipient"], str) or len(value["recipient"]) > 256)):
+            raise ValueError("Invalid draft")
+        pending = value.get("pending")
+        if pending is not None:
+            if (not isinstance(pending, dict) or set(pending) != {"request_id", "recipient", "body"}
+                    or not isinstance(pending["recipient"], str) or not pending["recipient"].strip()
+                    or pending["recipient"] != value["recipient"]):
+                raise ValueError("Invalid pending draft")
+            request = canonical_uuid(pending["request_id"], "request_id")
+            body = operator_reply_input(request, pending["body"], request)
+            if uuid.UUID(request).version != 4 or body != pending["body"] or body != value["text"].strip():
+                raise ValueError("Pending draft changed")
+        return pending
+
+    def draft_value(self):
+        value = {"text": self.composer.text(), "recipient": self.draft_recipient}
+        if self.pending_send:
+            value["pending"] = dict(self.pending_send)
+        return value
+
+    def update_send_controls(self):
+        held = bool(self.pending_send) or not self.draft_ready or self.draft_invalid
+        self.composer.setReadOnly(held)
+        self.recipient.setEnabled(not held)
+        self.send_button.setEnabled(self.draft_ready and not self.draft_invalid and not self.send_busy and not self.send_after_save)
+        self.send_button.setText("Retry same message" if self.pending_send else "Send")
+        self.send_button.setToolTip("Retry preserves the exact recipient, body and request ID." if self.pending_send else "Send an operator message")
+
     def save_draft(self):
-        if not self.client or not self.draft_dirty or self.draft_saving:
+        if not self.client or not self.draft_ready or not self.draft_dirty or self.draft_saving or self.draft_invalid:
             return
         self.draft_saving = True
-        value = {"text": self.composer.text(), "recipient": self.draft_recipient}
+        value = self.draft_value()
         client = self.client
         def done(result, error):
             self.draft_saving = False
-            if not error and value == {"text": self.composer.text(), "recipient": self.draft_recipient}:
+            if not error and result != value:
+                error = "Saved draft receipt does not match the request"
+            if not error and value == self.draft_value():
                 self.draft_dirty = False
+                if self.send_after_save:
+                    self.send_after_save = False
+                    self.dispatch_pending_send()
             elif error:
+                self.send_after_save = False
                 self.status.setText("Draft not saved; reconnect before closing")
+                notice = ("Draft save is unconfirmed; this attempt did not send. Retry keeps the original request. "
+                          if self.pending_send else "Draft save is unconfirmed. Reconnect before closing; a saved pending request may still need reconciliation. ")
+                self.send_notice.setText(notice + error)
             else:
                 self.save_draft()
+            self.update_send_controls()
         self.job(lambda: client.call("message_draft", value=value), done)
 
     def terminal_appearance(self):
@@ -1053,7 +1134,7 @@ class Window(QMainWindow):
         if message is None or message["id"] not in identities:
             return
         menu = QMenu(self)
-        menu.addAction("View message", lambda: QMessageBox.information(self, "Message", message["body"] + "\n\n" + message["detail"]))
+        menu.addAction("View receipt / reply", lambda: self.inspect_message(message["id"]))
         held = [m["id"] for m in self.snapshot["messages"] if m["id"] in identities and m["state"] == "held"]
         if held:
             menu.addAction(f"Release selected held messages ({len(held)})", lambda: self.rpc_batch(
@@ -1062,18 +1143,171 @@ class Window(QMainWindow):
         menu.exec(self.messages.viewport().mapToGlobal(point))
 
     def select_recipient(self, key):
+        if self.pending_send or self.draft_invalid:
+            self.send_notice.setText("Resolve the pending send before changing its recipient.")
+            return
         self.comm_body.show()
         self.comm_toggle.setText("v Session communication")
         self.recipient.setCurrentIndex(self.recipient.findData(key))
         self.composer.setFocus()
 
     def send(self):
-        if self.recipient.currentData() and self.composer.text().strip():
-            body = self.composer.text()
-            def sent(result):
-                if self.composer.text() == body:
-                    self.composer.clear()
-            self.rpc("send", recipient=self.recipient.currentData(), body=body, request_id=uuid.uuid4().hex, callback=sent)
+        if self.send_busy or self.send_after_save or self.draft_invalid or not self.draft_ready:
+            return
+        if not self.client:
+            self.send_notice.setText("Reconnect before sending. The draft and any pending request are retained.")
+            return
+        if not self.pending_send:
+            if not self.recipient.currentData() or not self.composer.text().strip():
+                return
+            self.draft_recipient = self.recipient.currentData()
+            pending = {"recipient": self.draft_recipient, "body": self.composer.text().strip(),
+                       "request_id": str(uuid.uuid4())}
+            try:
+                self.valid_pending_draft({**self.draft_value(), "pending": pending})
+            except (ValueError, TypeError, KeyError) as exc:
+                self.send_notice.setText("Message not sent: " + str(exc))
+                return
+            self.pending_send = pending
+        try:
+            self.valid_pending_draft(self.draft_value())
+        except (ValueError, TypeError, KeyError) as exc:
+            self.draft_invalid = True
+            self.send_notice.setText("Pending send is held: " + str(exc))
+            self.update_send_controls()
+            return
+        self.draft_timer.stop()
+        self.draft_dirty = True
+        self.send_after_save = True
+        self.send_notice.setText("Saving the exact request before sending…")
+        self.update_send_controls()
+        self.save_draft()  # Serialized with any earlier autosave; only its confirmed callback sends.
+
+    def dispatch_pending_send(self):
+        if not self.client or not self.pending_send:
+            self.update_send_controls()
+            return
+        pending = dict(self.pending_send)
+        client = self.client
+        self.send_busy = True
+        self.update_send_controls()
+        def done(result, error):
+            self.send_busy = False
+            if not error:
+                try:
+                    canonical_uuid(result["id"], "message")
+                    if (uuid.UUID(result["id"]).version != 4 or result["sender"] != "operator"
+                            or result["origin"] != "operator" or result["kind"] != "message"
+                            or result["recipient"] != pending["recipient"] or result["body"] != pending["body"]
+                            or result["dedupe"] != pending["request_id"]):
+                        raise ValueError("Receipt does not match the original request")
+                except (ValueError, TypeError, KeyError) as exc:
+                    error = str(exc)
+            if error:
+                self.send_notice.setText("Send outcome is unconfirmed. Retry keeps the same recipient, text and request ID. " + error)
+            else:
+                self.pending_send = None
+                self.draft_loading = True
+                self.composer.clear()
+                self.draft_loading = False
+                self.draft_dirty = True
+                self.send_notice.setText("Message accepted. Select its receipt / reply to check delivery and response.")
+                self.save_draft()
+                self.poll()
+            self.update_send_controls()
+        self.job(lambda: client.call("send", **pending), done)
+
+    def inspect_selected_message(self):
+        identities = selected_ids(self.messages)
+        if len(identities) == 1:
+            self.inspect_message(identities[0])
+
+    def inspect_message(self, identity):
+        original = next((dict(m) for m in self.snapshot["messages"] if m["id"] == identity), None)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Message receipt / reply")
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.resize(700, 600)
+        layout = QVBoxLayout(dialog)
+        contents = QPlainTextEdit()
+        contents.setObjectName("message_receipt_text")
+        contents.setReadOnly(True)
+        layout.addWidget(contents)
+        controls = QHBoxLayout()
+        state = {"generation": 0, "closed": False, "message": None}
+        def follow_up():
+            message = state["message"]
+            if not message:
+                return
+            target = message["recipient"] if message["sender"] == "operator" else message["sender"]
+            if self.pending_send or self.draft_invalid or not self.draft_ready:
+                self.send_notice.setText("Resolve the pending or unloaded draft before composing a follow-up.")
+                return
+            if target not in {s["id"] for s in self.snapshot["sessions"]}:
+                self.send_notice.setText("The original session is unavailable. No follow-up was prepared.")
+                return
+            if self.composer.text() and self.recipient.currentData() != target:
+                self.send_notice.setText("Your existing draft belongs to another recipient. It is preserved.")
+                return
+            self.select_recipient(target)
+            self.send_notice.setText("Compose a new message to the original session; send it when ready.")
+            dialog.accept()
+        follow = button("Compose follow-up", follow_up)
+        follow.setEnabled(False)
+        def refresh():
+            state["generation"] += 1
+            generation = state["generation"]
+            state["message"] = None
+            follow.setEnabled(False)
+            contents.setPlainText("Loading the exact message…")
+            if not self.client:
+                contents.setPlainText("Broker disconnected. Reconnect, then refresh this exact message.")
+                return
+            client = self.client
+            def received(message, error):
+                if state["closed"] or generation != state["generation"]:
+                    return
+                if not error:
+                    try:
+                        if message["id"] != identity or not isinstance(message["body"], str):
+                            raise ValueError("Exact message binding changed")
+                        if original and any(message.get(key) != original.get(key) for key in ("sender", "recipient", "origin", "kind", "body")):
+                            raise ValueError("Original message content or recipient changed")
+                        reply = message.get("reply")
+                        if reply and (reply["parent_message_id"] != identity or reply["sender"] != message["recipient"]
+                                      or reply["recipient"] != "operator" or not isinstance(reply["body"], str)):
+                            raise ValueError("Reply does not belong to this message and recipient")
+                    except (ValueError, TypeError, KeyError) as exc:
+                        error = str(exc)
+                if error:
+                    contents.setPlainText("Exact receipt unavailable: " + error + "\n\nNo delivery or reply state has been inferred. Refresh to retry.")
+                    return
+                state["message"] = message
+                names = self.session_labels()
+                names["operator"] = "You"
+                status = message["state"]
+                delivered = "Delivered" if status in {"delivered", "acknowledged", "completed"} else status
+                read = "Acknowledged" if status == "acknowledged" else "Not separately recorded" if status == "completed" else "Not recorded"
+                lines = [f"From: {names.get(message['sender'], message['sender'])}",
+                         f"To: {names.get(message['recipient'], message['recipient'])}",
+                         f"Delivery: {delivered}", f"Read: {read}",
+                         "Complete: " + ("Reported complete" if status == "completed" else "Not recorded"),
+                         "", "Original message", message["body"], "", "Reply",
+                         reply["body"] if reply else "No reply recorded for this exact message.",
+                         "", "Reply, read acknowledgment and completion are separate.",
+                         "", "Message reference: " + identity, "Detail: " + message.get("detail", "")]
+                contents.setPlainText("\n".join(lines))
+                follow.setEnabled(True)
+            self.job(lambda: client.call("message_get", message=identity), received)
+        controls.addWidget(button("Refresh receipt", refresh))
+        controls.addWidget(follow)
+        controls.addStretch()
+        controls.addWidget(button("Close", dialog.reject))
+        layout.addLayout(controls)
+        dialog.finished.connect(lambda _: state.update(closed=True))
+        dialog.show()
+        refresh()
+        return dialog
 
     def add_pair(self):
         if self.source.currentData() and self.target.currentData():
@@ -1331,7 +1565,10 @@ class Window(QMainWindow):
             self.rpc("cancel_shutdown_tracking")
 
     def save_and_close(self):
-        if self.draft_saving:
+        if self.draft_invalid:
+            QMessageBox.warning(self, "Draft preserved", "The saved draft is invalid or conflicts with local text. Closing is held to preserve both; resolve or reconnect first.")
+            return
+        if self.draft_saving or self.send_busy or self.send_after_save:
             QTimer.singleShot(100, self.save_and_close)
             return
         value = {"geometry": [self.x(), self.y(), self.width(), self.height()],
@@ -1344,6 +1581,7 @@ class Window(QMainWindow):
             if error:
                 self.composer.setEnabled(True)
                 self.recipient.setEnabled(True)
+                self.update_send_controls()
                 QMessageBox.warning(self, "Unsaved VISOR state", "State or message draft could not be saved. Reconnect and retry closing, or clear the draft before leaving.")
                 return
             self.allow_close = True
@@ -1352,9 +1590,10 @@ class Window(QMainWindow):
             self.composer.setEnabled(False)
             self.recipient.setEnabled(False)
             client = self.client
-            draft = {"text": self.composer.text(), "recipient": self.draft_recipient}
+            draft = self.draft_value() if self.draft_ready else None
             def save():
-                client.call("message_draft", value=draft)
+                if draft is not None and client.call("message_draft", value=draft) != draft:
+                    raise ValueError("Saved draft receipt does not match the request")
                 return client.call("ui_state", value=value)
             self.job(save, done)
         else:

@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,7 +45,7 @@ from .providers import (
 from .store import PolicyError, Store, canonical_uuid, operator_reply_input
 
 log = logging.getLogger(__name__)
-BUILD = "2026-10-27-prism-table-agent-ui-r5"
+BUILD = "2026-11-01-web-token-r8"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -105,6 +106,10 @@ class Broker:
         self.token = secrets.token_urlsafe(32)
         self.stop = threading.Event()
         self.delivery_lock = threading.RLock()
+        self.delivery_targets = {}
+        self.deleting_targets = set()
+        self.delivery_parallelism = None
+        self.delivery_inflight = {}
         self.launch_lock = threading.Lock()
         self.delivery_error = ""
         self.refresh_error = ""
@@ -146,10 +151,17 @@ class Broker:
                     "shutdown_targets": self.store.get_setting("shutdown_targets", []),
                     "wrap_up_progress": self.wrap_up_progress(),
                     "delivery_error": self.delivery_error, "refresh_error": self.refresh_error,
+                    "delivery_parallelism": self.delivery_parallelism,
                     "provider_warnings": self.provider_warnings,
                     "receipt_error": " · ".join(self.receipt_errors.copy().values()),
                     "external_focus": self.store.external_focus_links(),
                     **self.activity_snapshot()}
+        if action == "delivery_options":
+            if set(params) - {"value"}:
+                raise PolicyError("Delivery options accept only value")
+            if "value" in params:
+                self.store.set_setting("delivery_options", self.validate_delivery_options(params["value"]))
+            return self.validate_delivery_options(self.store.get_setting("delivery_options", {"max_parallel": 4}))
         if action == "external_window_candidates":
             from .external_windows import candidates
             return candidates()
@@ -186,10 +198,21 @@ class Broker:
         if action == "message_draft":
             if "value" in params:
                 value = params["value"]
-                if (not isinstance(value, dict) or set(value) != {"text", "recipient"}
+                if (not isinstance(value, dict) or set(value) not in ({"text", "recipient"}, {"text", "recipient", "pending"})
                         or not isinstance(value["text"], str) or len(value["text"]) > 32768
                         or value["recipient"] is not None and (not isinstance(value["recipient"], str) or len(value["recipient"]) > 256)):
                     raise PolicyError("Invalid message draft")
+                pending = value.get("pending")
+                if pending is not None:
+                    if (not isinstance(pending, dict) or set(pending) != {"request_id", "recipient", "body"}
+                            or not isinstance(pending["recipient"], str) or not pending["recipient"].strip()
+                            or pending["recipient"] != value["recipient"]):
+                        raise PolicyError("Invalid pending message draft")
+                    request = canonical_uuid(pending["request_id"], "request_id")
+                    body = operator_reply_input(request, pending["body"], request)
+                    if (uuid.UUID(request).version != 4 or body != pending["body"]
+                            or body != value["text"].strip()):
+                        raise PolicyError("Pending message must match its original draft")
                 self.store.set_setting("message_draft", value)
             return self.store.get_setting("message_draft", {"text": "", "recipient": None})
         if action == "refresh":
@@ -222,18 +245,40 @@ class Broker:
         if action == "delete_session":
             if params.get("confirmed") is not True:
                 raise PolicyError("Confirm permanent deletion and immediate terminal closure")
-            with self.launch_lock, self.delivery_lock:
-                session = self.store.session(params["session"])
-                def close_targets(native_ids):
-                    keys = {session["provider"] + ":" + sid for sid in native_ids}
-                    for target in self.store.sessions():
-                        if target["id"] in keys:
-                            self.close_for_delete(target)
-                deleted = delete_provider_session(session, close_targets)
-                for native_id in deleted:
-                    key = session["provider"] + ":" + native_id
-                    self.store.delete_session(key)
-                return True
+            with self.launch_lock:
+                held = []
+                gated = set()
+                try:
+                    with self.delivery_lock:
+                        session = self.store.session(params["session"])
+                        self.deleting_targets.add(session["id"])
+                        gated.add(session["id"])
+                    def close_targets(native_ids):
+                        keys = {session["provider"] + ":" + sid for sid in native_ids}
+                        with self.delivery_lock:
+                            self.deleting_targets.update(keys)
+                            gated.update(keys)
+                            targets = [(key, self.delivery_targets.setdefault(key, threading.Lock()))
+                                       for key in sorted(keys)]
+                        # Only these targets wait for their admitted sends; unrelated
+                        # messages and policy controls keep their short admission lock.
+                        for key, target_lock in targets:
+                            target_lock.acquire()
+                            held.append(target_lock)
+                        for target in self.store.sessions():
+                            if target["id"] in keys:
+                                self.close_for_delete(target)
+                    deleted = delete_provider_session(session, close_targets)
+                    with self.delivery_lock:
+                        for native_id in deleted:
+                            key = session["provider"] + ":" + native_id
+                            self.store.delete_session(key)
+                    return True
+                finally:
+                    with self.delivery_lock:
+                        for target_lock in reversed(held):
+                            target_lock.release()
+                        self.deleting_targets.difference_update(gated)
         if action == "new":
             provider, cwd = params["provider"], str(Path(params["cwd"]).resolve())
             with self.launch_lock:
@@ -492,6 +537,9 @@ class Broker:
             return self.store.enqueue(identity, params["recipient"], params["body"], params["request_id"])
         if action == "receive":
             with self.delivery_lock:
+                if (identity in self.deleting_targets
+                        or identity in self.delivery_targets and self.delivery_targets[identity].locked()):
+                    return None
                 message = self.store.claim(identity)
             return message
         if action == "transport_received":
@@ -743,26 +791,71 @@ class Broker:
                           expected_identity=json.loads(session["window_identity"] or "null"))
         return True
 
+    @staticmethod
+    def validate_delivery_options(value):
+        if (not isinstance(value, dict) or set(value) != {"max_parallel"}
+                or type(value["max_parallel"]) is not int or not 1 <= value["max_parallel"] <= 32):
+            raise PolicyError("Delivery max_parallel must be an integer from 1 to 32")
+        return dict(value)
+
+    def deliver_session(self, key):
+        target_lock = None
+        try:
+            with self.delivery_lock:
+                if self.stop.is_set() or key in self.deleting_targets:
+                    return
+                target_lock = self.delivery_targets.setdefault(key, threading.Lock())
+                if not target_lock.acquire(blocking=False):
+                    target_lock = None
+                    return
+                try:
+                    session = self.store.session(key)
+                except PolicyError:
+                    return  # Deleted after scheduling, before admission.
+                if session["provider"] != "codex" or session["status"] not in ("working", "waiting", "idle"):
+                    return
+                message = self.store.claim(key)
+            if message:
+                try:
+                    state, detail = deliver_codex(session, message)
+                except Exception:  # noqa: BLE001 -- a dispatched write cannot be assumed safe to retry
+                    state, detail = "delivery_unknown", "Provider delivery did not confirm acceptance"
+                self.store.delivery_result(message["id"], state, detail)
+        finally:
+            if target_lock is not None:
+                target_lock.release()
+
     def delivery_loop(self):
-        while not self.stop.wait(1):
-            try:
-                self.store.expire_sending()
-                for session in self.store.sessions():
-                    # Claude uses explicit MCP pull until channel push is approved and validated.
-                    if session["provider"] != "codex" or session["status"] not in ("working", "waiting", "idle"):
-                        continue
-                    with self.delivery_lock:
-                        message = self.store.claim(session["id"])
-                        if not message:
-                            continue
+        try:
+            options = self.dispatch("delivery_options", {}, "operator")
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            self.delivery_error = "Delivery configuration unavailable: " + type(exc).__name__
+            return
+        self.delivery_parallelism = options["max_parallel"]
+        with ThreadPoolExecutor(max_workers=self.delivery_parallelism, thread_name_prefix="visor-delivery") as pool:
+            while not self.stop.wait(1):
+                try:
+                    self.store.expire_sending()
+                    completed = [key for key, future in self.delivery_inflight.items() if future.done()]
+                    errors = []
+                    for key in completed:
                         try:
-                            state, detail = deliver_codex(session, message)
-                        except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
-                            state, detail = "delivery_unknown", "Provider delivery did not confirm acceptance"
-                        self.store.delivery_result(message["id"], state, detail)
-                self.delivery_error = ""
-            except Exception as exc:  # noqa: BLE001 -- delivery worker reports errors without dropping queue
-                self.delivery_error = str(exc)
+                            self.delivery_inflight.pop(key).result()
+                        except Exception as exc:  # noqa: BLE001 -- retain sending/UNKNOWN, never replay
+                            errors.append(type(exc).__name__)
+                    if completed:
+                        self.delivery_error = "Delivery result unavailable: " + ", ".join(errors) if errors else ""
+                    sessions = {session["id"]: session for session in self.store.sessions()}
+                    for key in self.store.queued_recipients():
+                        if len(self.delivery_inflight) >= self.delivery_parallelism:
+                            break
+                        session = sessions.get(key)
+                        if (key in self.delivery_inflight or not session or session["provider"] != "codex"
+                                or session["status"] not in ("working", "waiting", "idle")):
+                            continue
+                        self.delivery_inflight[key] = pool.submit(self.deliver_session, key)
+                except Exception as exc:  # noqa: BLE001 -- durable queue remains authoritative
+                    self.delivery_error = "Delivery admission unavailable: " + type(exc).__name__
 
     def refresh_loop(self):
         while not self.stop.wait(15):
@@ -934,13 +1027,21 @@ def handler_for(broker):
                 _identity, role = principal
                 allowed = ACTIVITY_OPERATOR_ACTIONS if role == "operator" else ACTIVITY_AGENT_ACTIONS if role in ("agent", "activity") else ()
                 limit = activity_request_limit(broker.activities.policy()) if action_hint in allowed else 65536
+                # Escaped non-BMP text uses twelve JSON bytes per code point.
+                # Admit only these existing typed actions/roles; retain the generic limit.
+                message_limits = {"send": 12 * (16000 + 256 + 128) + 65536} if role in ("operator", "agent") else {}
+                if role == "operator":
+                    message_limits["message_draft"] = 12 * (32768 + 16000 + 2 * 256 + 36) + 65536
+                if action_hint in message_limits:
+                    limit = message_limits[action_hint]
+                allowed = set(allowed) | message_limits.keys()
                 if not 0 < length <= limit:
                     raise PolicyError(f"RPC request size must be 1–{limit} bytes including JSON framing; retain the original draft")
                 data = json.loads(self.rfile.read(length))
                 if not isinstance(data, dict):
                     raise PolicyError("RPC request must be an object")
                 if length > 65536 and (data.get("action") != action_hint or data.get("action") not in allowed):
-                    raise PolicyError("Large requests require a matching permitted activity action")
+                    raise PolicyError("Large requests require a matching permitted action")
                 result = broker.dispatch(data["action"], data.get("params", {}), *principal)
                 payload, status = {"result": result}, 200
             except Exception as exc:  # noqa: BLE001 -- HTTP request boundary returns structured errors

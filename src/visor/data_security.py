@@ -25,7 +25,11 @@ if ($env:VISOR_ACL_CREATE -eq '1') {
     }
     [System.IO.Directory]::SetAccessControl($target, $acl)
 }
-$acl = [System.IO.Directory]::GetAccessControl($target)
+$acl = if ($env:VISOR_ACL_FILE -eq '1') {
+    [System.IO.File]::GetAccessControl($target)
+} else {
+    [System.IO.Directory]::GetAccessControl($target)
+}
 $rules = @($acl.Access | ForEach-Object {
     @{
         sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
@@ -38,13 +42,16 @@ $rules = @($acl.Access | ForEach-Object {
 '''
 
 
-def ensure_windows_private(root: Path, *, created: bool) -> None:
+def ensure_windows_private(root: Path, *, created: bool, file: bool = False) -> None:
+    if file and created:
+        raise ValueError("Private file ACL inspection does not create or rewrite permissions")
     system_root = Path(os.environ.get("SystemRoot", "C:/Windows"))
     powershell = system_root / "System32/WindowsPowerShell/v1.0/powershell.exe"
     encoded = base64.b64encode(ACL_SCRIPT.encode("utf-16le")).decode("ascii")
     result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
                             env={**os.environ, "VISOR_ACL_TARGET": str(root),
                                  "VISOR_ACL_CREATE": "1" if created else "0",
+                                 "VISOR_ACL_FILE": "1" if file else "0",
                                  "PSModulePath": str(powershell.parent / "Modules")},
                             capture_output=True, text=True, encoding="utf-8", errors="replace",
                             timeout=20, check=False, **hidden_options())

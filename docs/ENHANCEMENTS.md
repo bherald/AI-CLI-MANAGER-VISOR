@@ -1,4 +1,11 @@
-# VISOR 1.5.0 candidate features
+# VISOR 1.5.0 beta 6 communication candidate
+
+The local candidate adds independent-recipient delivery, durable native Send,
+exact reply inspection, clearer attention filtering and Unicode transport fixes.
+See [the candidate packet](RELEASE_1_5_0_BETA_6.md) for validation and limits.
+Public publication remains a separate reviewed action.
+
+# VISOR 1.5.0 beta 5 features
 
 | Feature | State | Review scope |
 | --- | --- | --- |
@@ -14,7 +21,7 @@
 | Plain help and loading/empty/error/stale data cues | Implemented | Bounds, literal text, timezone and small-card scrolling checks |
 | Remembered web-start offer, with default-No consent | Implemented | Fresh/off/Stop/No/failure, remembered host/port, token rotation and launcher/smoke checks |
 | Web-service operation and agent guides | Prepared | [Web access](WEB_ACCESS.md), [agent workflow](PRISM_AGENTS.md) |
-| Public release | Awaiting operator approval | No public push/tag/release for 1.5.0 |
+| Public release | Beta 5 published | The new communication candidate remains unpublished |
 
 See [release evidence](RELEASE_1_5_0.md), [design references](PRISM_DESIGN.md) and
 [agent authoring](../PRISM.md). Implementation status is separate from native

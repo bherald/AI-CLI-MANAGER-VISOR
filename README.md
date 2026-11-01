@@ -1,5 +1,9 @@
 # VISOR — AI CLI session supervisor
 
+**Local communication candidate:** beta 6 adds independent-recipient delivery,
+durable native Send and exact reply inspection. It is not published; see
+[changes, configuration and upgrade scope](docs/RELEASE_1_5_0_BETA_6.md).
+
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. Use the supervisor to find and resume exact sessions, bring terminals forward, connect selected agents, and follow their coordination messages through delivery, acknowledgment and completion. Session communication and its local message history are a core part of VISOR, alongside terminal management and graceful wrap-up.
 
 **1.5.0 beta 5 — one Prism workspace, rich controls and optional VISOR + Prism web access.** The candidate adds one desktop home for all boards, readable session names, collapsed card actions, multi-row selection, a portable gadget catalog and an optional combined sessions/messages/Prism view for phone, tablet and browser. The additive table/agent work keeps version 1.5.0. See [what changed and validation](docs/RELEASE_1_5_0.md) and the [Prism design](docs/PRISM_DESIGN.md). The latest published release is [1.5.0 beta 5](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5). Exact-tag source/build/extracted-package CI passed on Windows, Linux and both Mac architectures. Interactive Windows/Mac, physical-device and complete accessibility acceptance remain pending.

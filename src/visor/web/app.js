@@ -86,21 +86,89 @@
     const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { month: "2-digit", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).formatToParts(date).map(p => [p.type, p.value]));
     return `${parts.month}/${parts.day}/${parts.year}  ${parts.hour}:${parts.minute} ${parts.dayPeriod.toLowerCase()}`;
   }
+  function safeLink(value) {
+    if (typeof value !== "string" || !/^https?:\/\//i.test(value) || /[\x00-\x20\x7f\\]/.test(value)) return null;
+    try {
+      if (/[\x00-\x1f\x7f\\]/.test(decodeURIComponent(value))) return null;
+      const url = new URL(value), authority = value.match(/^https?:\/\/([^/?#]+)/i)?.[1];
+      if (!url.hostname || url.username || url.password || !authority || authority.includes("%") || authority.includes("@") || (url.port && Number(url.port) < 1)) return null;
+      const credentials = new Set("token accesstoken refreshtoken idtoken authtoken apitoken csrftoken xsrftoken sessiontoken oauthtoken bearertoken password passwd pass secret clientsecret apikey key accesskey accesskeyid awsaccesskeyid credential credentials authorization auth bearer sessionid signature sig xamzcredential xamzsignature xamzsecuritytoken xgoogcredential xgoogsignature".split(" "));
+      for (const component of [url.search.slice(1), url.hash.slice(1)]) {
+        for (const parameter of component.split(/[&;?]/)) {
+          const equals = parameter.indexOf("="); if (equals < 0) continue;
+          const name = decodeURIComponent(parameter.slice(0, equals).replace(/\+/g, " "));
+          if (name.includes("%") || credentials.has(name.toLowerCase().replace(/[^a-z0-9]/g, ""))) return null;
+        }
+      }
+      return value;
+    } catch { return null; }
+  }
+  function htmlInteger(value, low, high) {
+    return /^[0-9]{1,3}$/.test(value) && Number(value) >= low && Number(value) <= high ? String(Number(value)) : null;
+  }
+  function htmlWidth(value) {
+    const percent = value.endsWith("%"), number = htmlInteger(percent ? value.slice(0, -1) : value.replace(/px$/, ""), percent ? 1 : 80, percent ? 100 : 800);
+    return number === null ? null : number + (percent ? "%" : "");
+  }
+  function htmlStyle(key, value, tag) {
+    const rgb = /^#[0-9a-f]{6}$/i, table = ["TABLE", "TR", "TD", "TH", "THEAD", "TBODY"].includes(tag);
+    if (["color", "background-color"].includes(key)) return rgb.test(value) ? value : null;
+    if (key === "font-family" && /^[A-Za-z][A-Za-z ,_-]{0,99}$/.test(value)) return value;
+    const font = /^([0-9]{1,2}(?:\.[0-9]{1,2})?)(px|pt)$/.exec(value);
+    if (key === "font-size" && font && Number(font[1]) >= 1 && Number(font[1]) <= 28) return value;
+    const enums = {"font-weight": ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"], "font-style": ["normal", "italic", "oblique"], "text-align": ["left", "center", "right", "justify"], "text-decoration": ["none", "underline", "line-through"], "vertical-align": ["top", "middle", "bottom", "baseline"]};
+    if (Object.hasOwn(enums, key) && enums[key].includes(value)) return value;
+    if (/^(margin|padding)(-(top|bottom|left|right))?$/.test(key) && /^(?:[0-9]{1,2}px|0)(?: (?:[0-9]{1,2}px|0)){0,3}$/.test(value) && value.split(" ").every(item => htmlInteger(item.replace(/px$/, ""), 0, 16) !== null)) return value;
+    if (!table) return null;
+    if (key === "width") { const width = htmlWidth(value); return width === null ? null : width + (width.endsWith("%") ? "" : "px"); }
+    if (key === "border-collapse" && ["collapse", "separate"].includes(value)) return value;
+    if (key === "border-color") return rgb.test(value) ? value : null;
+    if (key === "border-style" && ["solid", "dashed", "dotted", "none"].includes(value)) return value;
+    if (key === "border-width") { const width = htmlInteger(value.replace(/px$/, ""), 0, 8); return width === null ? null : width + "px"; }
+    if (key === "border") { const parts = value.split(/\s+/), width = htmlInteger(parts[0].replace(/px$/, ""), 0, 8); if (parts.length === 3 && width !== null && ["solid", "dashed", "dotted", "none"].includes(parts[1]) && rgb.test(parts[2])) return `${width}px ${parts[1]} ${parts[2]}`; }
+    return null;
+  }
   function formattedHTML(value) {
-    // Defense in depth: HTML from Python is already sanitized. Preserve only
-    // formatting elements and text in a fresh document; never copy attributes.
-    const source = new DOMParser().parseFromString(value, "text/html");
-    const allowed = new Set("P BR HR H1 H2 H3 H4 B STRONG I EM U UL OL LI TABLE THEAD TBODY TR TD TH PRE CODE BLOCKQUOTE SPAN DIV SMALL SUB SUP".split(" "));
+    // Python already sanitizes board HTML. Revalidate attributes when copying to
+    // the live DOM, including locally edited/pasted content. Templates are inert.
+    const source = document.createElement("template"); source.innerHTML = value;
+    const allowed = new Set("P BR HR H1 H2 H3 H4 B STRONG I EM U UL OL LI TABLE THEAD TBODY TR TD TH PRE CODE BLOCKQUOTE SPAN DIV SMALL SUB SUP A".split(" "));
     const result = document.createDocumentFragment();
     const copy = (from, into) => {
       for (const node of from.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) into.append(document.createTextNode(node.textContent));
         else if (node.nodeType === Node.ELEMENT_NODE && allowed.has(node.tagName)) {
-          const child = el(node.tagName.toLowerCase()); copy(node, child); into.append(child);
+          const child = el(node.tagName.toLowerCase()), styles = {};
+          // Keep authored foregrounds readable on light cells despite the app theme.
+          if (["A", "TH"].includes(node.tagName)) child.style.color = "inherit";
+          if (node.tagName === "A") {
+            const href = safeLink(node.getAttribute("href"));
+            if (!href) { copy(node, into); continue; }
+            child.setAttribute("href", href); child.target = "_blank"; child.rel = "noopener noreferrer"; child.referrerPolicy = "no-referrer";
+            if (node.hasAttribute("title")) child.title = node.getAttribute("title");
+          }
+          for (const {name, value} of node.attributes) {
+            let valid = null;
+            if (name === "style") {
+              for (const rule of value.split(";")) {
+                const colon = rule.indexOf(":"); if (colon < 0) continue;
+                const key = rule.slice(0, colon).trim().toLowerCase(), parsed = htmlStyle(key, rule.slice(colon + 1).trim(), node.tagName);
+                if (parsed !== null) styles[key] = parsed;
+              }
+            } else if (["TD", "TH"].includes(node.tagName) && ["rowspan", "colspan"].includes(name)) valid = htmlInteger(value, 1, 100);
+            else if (["TABLE", "TR", "TD", "TH", "THEAD", "TBODY"].includes(node.tagName) && name === "bgcolor") valid = /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+            else if (["TABLE", "TD", "TH"].includes(node.tagName) && name === "width") valid = htmlWidth(value);
+            else if (node.tagName === "TABLE" && name === "border") valid = htmlInteger(value, 0, 8);
+            else if (node.tagName === "TABLE" && ["cellpadding", "cellspacing"].includes(name)) valid = htmlInteger(value, 0, 16);
+            else if (node.tagName === "TABLE" && name === "bordercolor" && /^#[0-9a-f]{6}$/i.test(value)) styles["border-color"] = value;
+            if (valid !== null) child.setAttribute(name, valid);
+          }
+          for (const [key, value] of Object.entries(styles)) child.style.setProperty(key, value);
+          copy(node, child); into.append(child);
         }
       }
     };
-    copy(source.body, result); return result;
+    copy(source.content, result); return result;
   }
   function sanitizedHTML(value) { const holder = el("div"); holder.append(formattedHTML(value)); return holder.innerHTML; }
   function names(board) {

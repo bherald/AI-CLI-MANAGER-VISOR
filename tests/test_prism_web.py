@@ -328,6 +328,10 @@ class PrismWebCase(unittest.TestCase):
         """CDP controls only a disposable synthetic board and a fresh browser profile."""
         from websockets.sync.client import connect
 
+        details = (Path(__file__).parent / "fixtures" / "details-overview.html").read_text()
+        self.client.board["document"]["cards"] = [
+            {**card, "html": details} if card["id"] == "notes" else card
+            for card in self.client.board["document"]["cards"]]
         cache = Path(__file__).resolve().parents[1] / ".cache"
         cache.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="prism-web-browser-", dir=cache) as profile:
@@ -379,6 +383,42 @@ class PrismWebCase(unittest.TestCase):
                     self.assertFalse(evaluate("Boolean(window.boardScriptRan)"))
                     self.assertEqual(evaluate("location.hash"), "")
                     self.assertFalse(evaluate("Boolean(document.querySelector('script[src^=\"http\"],img[src^=\"http\"],iframe,svg foreignObject'))"))
+                    self.assertEqual(evaluate("document.querySelectorAll('[data-card=notes] a[href^=\"https://example.test/\"]').length"), 20)
+                    self.assertEqual(evaluate("document.querySelector('[data-card=notes] a').rel"), "noopener noreferrer")
+                    self.assertEqual(evaluate("document.querySelector('[data-card=notes] a').target"), "_blank")
+                    self.assertEqual(evaluate("getComputedStyle(document.querySelector('[data-card=notes] th')).color"), "rgb(23, 54, 76)")
+                    self.assertEqual(evaluate("getComputedStyle(document.querySelector('[data-card=notes] a')).color"), "rgb(23, 54, 76)")
+                    self.assertEqual(evaluate("getComputedStyle(document.querySelector('[data-card=notes] table[border]')).borderTopWidth"), "1px")
+                    self.assertEqual(evaluate("getComputedStyle(document.querySelector('[data-card=notes] table[border]')).borderTopColor"), "rgb(203, 213, 225)")
+                    self.assertEqual(evaluate("getComputedStyle(document.querySelector('[data-card=notes] td[bgcolor=\"#ffffff\"]')).backgroundColor"), "rgb(255, 255, 255)")
+                    evaluate("window.clickedDetails=null;document.querySelector('[data-card=notes] a').addEventListener('click',event=>{event.preventDefault();window.clickedDetails=event.currentTarget.href;});document.querySelector('[data-card=notes] a').click();")
+                    self.assertEqual(evaluate("window.clickedDetails"), "https://example.test/details?item=project%3A1")
+                    # Run the actual client sanitizer source in this isolated DOM.
+                    # Its closure is intentionally not exposed as a production API.
+                    client_source = (Path(__file__).resolve().parents[1] / "src" / "visor" / "web" / "app.js").read_text()
+                    helpers = client_source[client_source.index("  function safeLink("):
+                                            client_source.index("  function sanitizedHTML(")]
+                    attack = ('<a href="https://@example.test">Credentials</a>'
+                              '<a href="https://example.test/path?access_token=SYNTHETIC_PLACEHOLDER">Query token</a>'
+                              '<a href="https://example.test/path?%61ccess%5Ftoken=SYNTHETIC_PLACEHOLDER">Encoded token</a>'
+                              '<a href="https://example.test/path?X-Amz-Signature=SYNTHETIC_PLACEHOLDER">Signature</a>'
+                              '<a href="https://example.test/path#token=SYNTHETIC_PLACEHOLDER">Fragment token</a>'
+                              '<a href="https://example.test/path#/route?client_secret=SYNTHETIC_PLACEHOLDER">Route secret</a>'
+                              '<a href="javascript:alert(1)">Script</a>'
+                              '<img src="https://example.test/tracker">'
+                              '<svg onload="evil()"><foreignObject>Hidden</foreignObject></svg>'
+                              '<table border="999" width="999%" style="__proto__:x;position:fixed">'
+                              '<tr><td style="background-image:url(https://example.test);color:#123456">'
+                              'Safe text</td></tr></table>')
+                    cleaned = evaluate("(()=>{const el=tag=>document.createElement(tag);" + helpers
+                                       + "const target=document.createElement('div');target.append(formattedHTML("
+                                       + json.dumps(attack) + "));return target.innerHTML;})()")
+                    for forbidden in ("href=", "<img", "<svg", "onload", "url(", "position:", "999"):
+                        self.assertNotIn(forbidden, cleaned)
+                    self.assertIn("Safe text", cleaned)
+                    self.assertIn("rgb(18, 52, 86)", cleaned)
+                    ordinary = "https://example.test/details?item=project%3Aone&q=tokenization&page=2#section-1"
+                    self.assertEqual(evaluate("(()=>{" + helpers + "return safeLink(" + json.dumps(ordinary) + ");})()"), ordinary)
                     self.assertTrue(evaluate("[...document.querySelectorAll('.card-options,.board-options')].every(item => !item.open)"))
                     self.assertTrue(evaluate("(() => {const card=document.querySelector('[data-card=\"gauge-1\"]');return card.querySelector('.direct-actions').getBoundingClientRect().top >= card.querySelector('svg').getBoundingClientRect().bottom;})()"))
                     evaluate("document.querySelector('[data-card=\"gauge-1\"] .direct-actions button').click()")

@@ -12,6 +12,19 @@ from visor.diagnostics import doctor
 
 class SecurityCase(unittest.TestCase):
     @patch("visor.data_security.subprocess.run")
+    def test_existing_secret_file_acl_uses_file_inspection_and_rejects_explicit_broad_grants(self, run):
+        value = {"user": "S-1-5-21-123", "owner": "S-1-5-21-123",
+                 "rules": [{"sid": "S-1-1-0", "allow": True, "rights": 1}]}
+        run.return_value = subprocess.CompletedProcess([], 0, json.dumps(value), "")
+        with self.assertRaises(PermissionError):
+            ensure_windows_private(Path("private-browser.json"), created=False, file=True)
+        self.assertEqual(run.call_args.kwargs["env"]["VISOR_ACL_FILE"], "1")
+        self.assertEqual(run.call_args.kwargs["env"]["VISOR_ACL_CREATE"], "0")
+        value["rules"][0]["sid"] = value["user"]
+        run.return_value = subprocess.CompletedProcess([], 0, json.dumps(value), "")
+        ensure_windows_private(Path("private-browser.json"), created=False, file=True)
+
+    @patch("visor.data_security.subprocess.run")
     def test_existing_acl_is_read_only_and_rejects_other_users(self, run):
         root = Path("private data ' & text")
         value = {"user": "S-1-5-21-123", "owner": "S-1-5-21-123",

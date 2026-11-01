@@ -53,7 +53,9 @@ class PrismContrastCase(unittest.TestCase):
             "session_link": {"id": "codex:synthetic", "label": "Example session"},
             "cards": [
                 {"id": "notes", "kind": "text", "title": "Typed notes",
-                 "html": '<p style="background-color:#ffffff;color:#000000;padding:20px">Write a practical next step.</p>',
+                 # Default surfaces stay dark. Explicit authored colors are covered by
+                 # test_activity_html and may deliberately use a light table theme.
+                 "html": '<p style="padding:12px">Write a practical next step.</p>',
                  "caption": "Example contributor notes",
                  "geometry": [10, 10, 440, 390]},
                 {"id": "question", "kind": "question", "title": "Discussion question",

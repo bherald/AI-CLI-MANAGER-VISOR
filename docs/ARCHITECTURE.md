@@ -144,3 +144,14 @@ Clearing live content does not erase retained backups. Supported rollback disabl
 the new browser capabilities while retaining this forward-compatible Store cleanup.
 An arbitrary older Store would not know these keys; downgrading it requires an
 explicit reply-preservation and retention plan before resuming operations.
+
+## Saved browser token
+
+The optional Web access dialog keeps its selectable per-start/saved-static browser
+capability in a separate owner-private file, using the existing atomic private
+writer. Generate and masked overrides save before active rotation; failed writes
+preserve the current token. Host/Origin, explicit start/restart consent and broker
+operator permissions remain unchanged. Saved-static listeners bind to the exact
+private-file identity and reject stale access after rotation or recovery. The
+secret is not a generic setting, agent/helper credential or packaged profile.
+See [Web access](WEB_ACCESS.md) for persistence and recovery behavior.

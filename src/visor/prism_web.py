@@ -20,18 +20,20 @@ import os
 import re
 import secrets
 import socket
+import sqlite3
 import stat
 import threading
 import uuid
-from html import escape
-from html.parser import HTMLParser
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .activity_document import ActivityPolicy, resolve_image
+from .activity_html import safe_html
 from .broker import Client
-from .store import PolicyError
+from .paths import write_private
+from .store import PolicyError, Store
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
 _STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -42,6 +44,120 @@ _STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
            "/visor.js": ("visor.js", "text/javascript; charset=utf-8"),
            "/visor.css": ("visor.css", "text/css; charset=utf-8")}
 _SESSION = re.compile(r"(?:codex|claude):[A-Za-z0-9][A-Za-z0-9._-]{0,191}\Z")
+_WEB_TOKEN = re.compile(r"[A-Za-z0-9._~-]{1,512}\Z")
+
+
+def validated_web_token(value):
+    if not isinstance(value, str) or not _WEB_TOKEN.fullmatch(value):
+        raise ValueError("Use 1–512 letters, digits, dots, underscores, tildes or hyphens for the browser token")
+    return value
+
+
+def _credential_metadata_path(root, name, *, secret=True):
+    path = Path(root) / name
+    if path.is_symlink():
+        raise ValueError("Browser token settings must be an owner-private ordinary file")
+    if path.exists():
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or os.name != "nt" and (
+                info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & (0o077 if secret else 0o022)):
+            raise ValueError("Browser token settings must be an owner-private ordinary file")
+        if os.name == "nt":
+            from .data_security import ensure_windows_private
+            ensure_windows_private(path, created=False, file=True)
+    return path
+
+
+def _web_settings_path(root):
+    return _credential_metadata_path(root, "web-access.json")
+
+
+def _assert_separate_browser_token(root, token):
+    """Compare only this candidate with current auth metadata; never initialize a store."""
+    if token is None:
+        return
+    collision = False
+    try:
+        endpoint = _credential_metadata_path(root, "broker.json")
+        if endpoint.exists():
+            fd = os.open(endpoint, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "r", encoding="utf-8") as stream:
+                info = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(info.st_mode) or info.st_size > 4096
+                        or os.name != "nt" and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077)):
+                    raise ValueError("Invalid endpoint metadata")
+                current = json.load(stream, object_pairs_hook=_unique_object)
+            if not isinstance(current, dict) or not isinstance(current.get("token"), str) or not current["token"]:
+                raise ValueError("Invalid endpoint metadata")
+            collision = hmac.compare_digest(token.encode("utf-8"), current["token"].encode("utf-8"))
+        database = _credential_metadata_path(root, "visor.sqlite3", secret=False)
+        if database.exists():
+            # The existing authentication digest and exact indexed lookup. URI
+            # read-only mode cannot create or migrate a profile on token entry.
+            with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+                collision = db.execute("SELECT session_id,role FROM credentials WHERE hash=?",
+                                       (Store.digest(token),)).fetchone() is not None or collision
+    except (OSError, ValueError, sqlite3.Error):
+        raise ValueError("Current credential metadata cannot be checked safely. Browser token was not changed.") from None
+    if collision:
+        raise ValueError("Choose a separate browser token; current broker, agent, helper and activity credentials cannot be reused.")
+
+
+def _file_identity(info):
+    return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_mode, info.st_uid
+
+
+def read_web_access_settings(root, *, with_identity=False):
+    """Separate browser-only secret; never a generic broker/agent setting."""
+    path = _web_settings_path(root)
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        value = {"mode": "per_start", "token": None}
+        return (value, None) if with_identity else value
+    with os.fdopen(fd, "r", encoding="utf-8") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
+            raise ValueError("Browser token settings are invalid")
+        if os.name != "nt" and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077):
+            raise ValueError("Browser token settings must be owner-private")
+        try:
+            value = json.load(stream, object_pairs_hook=_unique_object)
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("Browser token settings are invalid") from exc
+        identity = _file_identity(info)
+        if _file_identity(os.fstat(stream.fileno())) != identity or _file_identity(path.stat()) != identity:
+            raise ValueError("Browser token settings changed; try again")
+    value = _validated_web_settings(value)
+    return (value, identity) if with_identity else value
+
+
+def _validated_web_settings(value):
+    if (not isinstance(value, dict) or set(value) != {"mode", "token"}
+            or not isinstance(value["mode"], str) or value["mode"] not in {"per_start", "saved_static"}):
+        raise ValueError("Choose a browser token mode and save valid settings")
+    if value["token"] is not None:
+        validated_web_token(value["token"])
+    if value["mode"] == "saved_static" and value["token"] is None:
+        raise ValueError("Generate or enter a browser token first")
+    return dict(value)
+
+
+def save_web_access_settings(root, mode, token):
+    value = _validated_web_settings({"mode": mode, "token": token})
+    root = Path(root)
+    if os.name == "nt":
+        from .data_security import ensure_windows_private
+        ensure_windows_private(root, created=False)
+    else:
+        info = root.stat()
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+            raise ValueError("Browser token directory must be owner-private")
+    _assert_separate_browser_token(root, token)
+    write_private(_web_settings_path(root), value)
+    return value
+
+
 _ACTIONS = {
     "activity_control": {"id", "action", "request_id"},
     "activity_view": {"id", "state", "revision", "view_seq", "request_id"},
@@ -49,46 +165,6 @@ _ACTIONS = {
     "activity_edit": {"id", "card_id", "revision", "content", "request_id"},
     "activity_event": {"id", "card_id", "revision", "action_id", "value", "request_id"},
 }
-_SAFE_TAGS = frozenset({"p", "br", "hr", "h1", "h2", "h3", "h4", "b", "strong", "i", "em",
-                        "u", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th",
-                        "pre", "code", "blockquote", "span", "div", "small", "sub", "sup"})
-_BLOCKED_TAGS = frozenset({"script", "style", "iframe", "object", "embed", "svg", "math",
-                           "template", "textarea", "noscript"})
-
-
-class _SafeHTML(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.result = []
-        self.blocked = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag in _BLOCKED_TAGS:
-            self.blocked.append(tag)
-        elif not self.blocked and tag in _SAFE_TAGS:
-            # Board-provided attributes, CSS, links and resource URLs are omitted.
-            self.result.append(f"<{tag}>")
-
-    def handle_endtag(self, tag):
-        if self.blocked:
-            if tag == self.blocked[-1]:
-                self.blocked.pop()
-        elif tag in _SAFE_TAGS:
-            self.result.append(f"</{tag}>")
-
-    def handle_data(self, data):
-        if not self.blocked:
-            self.result.append(escape(data))
-
-
-def safe_html(value):
-    """Conservative formatted text with no attributes, resources or active content."""
-    parser = _SafeHTML()
-    parser.feed(value)
-    parser.close()
-    return "".join(parser.result)
-
-
 def _identifier(value):
     if not isinstance(value, str) or not _ID.fullmatch(value):
         raise ValueError("A safe Prism identifier is required")
@@ -172,7 +248,7 @@ def _public_board(value):
 class PrismWebServer:
     """One private operator server. Starting it does not open or acknowledge boards."""
 
-    def __init__(self, root, host="127.0.0.1", port=0, *, client=None):
+    def __init__(self, root, host="127.0.0.1", port=0, *, client=None, token=None):
         host = "127.0.0.1" if host == "localhost" else host
         address = ipaddress.ip_address(host)
         mapped = getattr(address, "ipv4_mapped", None)
@@ -182,8 +258,13 @@ class PrismWebServer:
         if type(port) is not int or not 0 <= port <= 65535:
             raise ValueError("Port must be between zero and 65535")
         self.root = Path(root).resolve()
+        settings, identity = read_web_access_settings(self.root, with_identity=True) if token is None else (None, None)
+        token = token if token is not None else settings["token"] if settings["mode"] == "saved_static" else secrets.token_urlsafe(32)
+        validated_web_token(token)
+        _assert_separate_browser_token(self.root, token)
+        self.token = token
+        self._saved_token_identity = identity if settings is not None and settings["mode"] == "saved_static" else None
         self.client = client or Client(self.root)
-        self.token = secrets.token_urlsafe(32)
         self.policy = ActivityPolicy()
         self.thread = None
         self._closed = False
@@ -201,8 +282,31 @@ class PrismWebServer:
         public_host = f"[{host}]" if address.version == 6 else host
         self.authority = f"{public_host}:{self.httpd.server_port}"
         self.origin = "http://" + self.authority
+        self.url = self.origin + "/#token=" + token
+        self.visor_url = self.origin + "/visor#token=" + token
+
+    def rotate_browser_token(self, token, *, saved_static=False):
+        """Owner UI calls only after saving; old bearer requests then fail normally."""
+        token = validated_web_token(token)
+        _assert_separate_browser_token(self.root, token)
+        identity = None
+        if saved_static:
+            settings, identity = read_web_access_settings(self.root, with_identity=True)
+            if settings["mode"] != "saved_static" or not hmac.compare_digest(settings["token"], token):
+                raise ValueError("Saved browser token changed; reopen Web access")
+        self.token = token
+        self._saved_token_identity = identity
         self.url = self.origin + "/#token=" + self.token
         self.visor_url = self.origin + "/visor#token=" + self.token
+
+    def browser_token_current(self):
+        if self._saved_token_identity is None:
+            return True
+        path = self.root / "web-access.json"
+        try:
+            return not path.is_symlink() and _file_identity(path.stat()) == self._saved_token_identity
+        except OSError:
+            return False
 
     def start(self):
         if self._closed:
@@ -379,7 +483,7 @@ class _Handler(BaseHTTPRequestHandler):
                 or self.headers.get("Sec-Fetch-Site") == "cross-site"):
             self._respond(403, {"error": "Same-origin access is required"})
             return False
-        if authenticated and (len(self.headers.get_all("Authorization", [])) != 1
+        if authenticated and (not app.browser_token_current() or len(self.headers.get_all("Authorization", [])) != 1
                 or not hmac.compare_digest(self.headers.get("Authorization", "").encode("utf-8"),
                                            ("Bearer " + app.token).encode("ascii"))):
             self._respond(401, {"error": "Open the private browser link from Visor"})

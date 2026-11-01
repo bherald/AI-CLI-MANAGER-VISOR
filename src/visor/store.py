@@ -444,6 +444,12 @@ class Store:
                 AND state IN ('delivered','delivery_unknown','acknowledged') ORDER BY created""",
                                                     (recipient,))]
 
+    def queued_recipients(self):
+        """Delivery admission uses the full queue, never the bounded UI history."""
+        with self.connect() as db:
+            return [row[0] for row in db.execute("""SELECT recipient FROM messages
+                WHERE state='queued' GROUP BY recipient ORDER BY MIN(created),recipient""")]
+
     def claim(self, recipient=None):
         """Claim under current policy; an in-flight claim cannot be retracted by a toggle."""
         with self.connect(True) as db:

@@ -1,3 +1,14 @@
+# 1.5.0 beta 6 — local communication candidate
+
+- Keep healthy Codex recipients progressing while another recipient is slow.
+- Preserve native Send requests through uncertain responses and restart.
+- Inspect exact agent replies and compose guarded follow-ups in the native UI.
+- Show held, failed and uncertain messages under Needs attention.
+- Preserve valid Unicode drafts and messages through the typed RPC limits.
+
+Build `2026-11-01-communication-r6`; not published. See the
+[candidate evidence and upgrade scope](RELEASE_1_5_0_BETA_6.md).
+
 # 1.5.0 beta 5 — published 2026-10-27
 
 [Download and checksums](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5). Exact-tag source, native-build and extracted-package jobs passed on Windows, Ubuntu, Apple Silicon Mac and Intel Mac. Interactive/native-device limits remain open. Beta 5 fixes test-fixture privacy and IPv6-format assumptions without changing the reviewed runtime build. The feature list below describes the 1.5.0 implementation.

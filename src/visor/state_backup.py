@@ -80,6 +80,10 @@ def snapshot(root, *, prune=True):
 def restore(root, backup):
     """Caller must own both broker and supervisor locks throughout this operation."""
     root, backup = Path(root).resolve(), Path(backup).expanduser().resolve()
+    # Browser capabilities are separate from broker/agent credentials, but
+    # recovery must revoke them too rather than authorize access to restored data.
+    from .prism_web import _web_settings_path
+    web_settings = _web_settings_path(root)
     access = root / "activity-access"
     if access.is_symlink() or access.exists() and not access.is_dir():
         raise ValueError("Prism access directory must be an ordinary directory")
@@ -122,6 +126,7 @@ def restore(root, backup):
             for suffix in ("-wal", "-shm"):
                 Path(str(current) + suffix).unlink(missing_ok=True)
             os.replace(temp, current)
+            web_settings.unlink(missing_ok=True)
             (root / "broker.json").unlink(missing_ok=True)
             if access.exists():
                 for credential in access.iterdir():

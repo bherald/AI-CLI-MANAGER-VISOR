@@ -18,10 +18,15 @@ Linux/Chrome automated checks do not establish acceptance on every real device.
 3. Choose a port, or leave **Automatic** for a free port. The desktop remembers
    the resulting port, so browser drafts/layouts can use the same origin later.
    The next inactive dialog still defaults to local-only binding.
-4. Click **Start**, then **Open VISOR** or **Open Prism**. **Copy link** supplies
+4. Choose **New token each start** (the existing default), or **Saved static token**.
+   Static mode creates and saves a strong token when first selected. **Generate**
+   replaces it; the masked field accepts an override. Valid changes save when you
+   finish editing, including when the dialog closes. No separate Save is needed.
+5. Click **Start**, then **Open VISOR** or **Open Prism**. **Copy link** supplies
    the private VISOR link for the intended browser/device.
-5. Click **Stop** when finished. It stops this GUI-owned listener and revokes its
-   private link. Starting again issues a new token.
+6. Click **Stop** when finished. It stops this GUI-owned listener. Per-start mode
+   creates a new token next time; saved-static mode keeps the same token across
+   Stop/start and ordinary application restart until you Generate or override it.
 
 Closing the Web access dialog or native Prism window leaves a started listener
 running. Exiting VISOR stops its GUI-owned web server. Restoring a workspace or
@@ -32,8 +37,9 @@ opening this dialog does not start web access.
 If web access was still on when VISOR closed, the next normal launch asks
 **Start web access again?** It shows the previous specific bind IP and port;
 **No** is the default. Choosing **Yes** starts a fresh listener on that offered
-address/port, with a new private link/token. It does not open a browser for you.
-Use **Web access…** to open or copy the new link.
+address/port, using your saved token mode. Per-start mode generates a new token;
+saved-static mode keeps the same token. It does not open a browser for you.
+Use **Web access…** to open or copy the private link.
 
 Choosing **No** leaves web access off and clears the reminder. Explicitly stopping
 web access before exiting also clears it, so the next launch does not prompt.
@@ -41,12 +47,48 @@ A failed restart is reported and leaves the server off. The prompt appears once
 per normal launch; reconnects do not repeat it, and smoke-test mode never asks.
 
 The saved state is an offer, not automatic network startup. A new manual dialog
-while the server is off still defaults to loopback. Existing tokens/URLs are not
-reused, and the independently started CLI server has its own process/lifetime.
+while the server is off still defaults to loopback. The independent CLI server
+has its own process/lifetime, but uses the same saved browser-token mode for the
+selected VISOR data directory. Saving a token never starts a listener or grants
+broker/agent access.
 
 For mobile access, the device must reach the selected LAN/VPN address. This does
 not require exposing the VISOR broker. Protect remote traffic using a trusted
 network/VPN. The built-in listener uses HTTP and does not configure TLS.
+
+## Saved token and rotation
+
+Browser settings live separately in owner-private `web-access.json`, outside the
+broker's generic settings and agent/helper credential tables. POSIX requires the
+current owner and mode0600 (private directory); Windows checks the directory and
+the existing secret file's ACL. Generate uses fresh cryptographic randomness.
+Overrides accept 1–512 URL/header-safe ASCII letters, digits and `. _ ~ -`;
+spaces, controls, full URLs, bearer headers and other characters are refused.
+Use Generate when you want a strong token.
+Before save, rotation or listener creation, VISOR rejects values matching the
+current private broker endpoint or an existing agent/helper/activity credential
+using the normal authentication digest and one bound, read-only current-store
+lookup. Rejection preserves the old browser file and active token and never
+prints the candidate. Missing metadata in a new profile is allowed; malformed,
+unsafe or unreadable existing credential metadata holds the change explicitly.
+No store is created/migrated, no credential/history scan runs, and no credential
+is sent to a service for this check. This checks known current credentials;
+unpublished values existing only in another process's memory are not discoverable.
+
+A successful Generate/override first saves atomically, then updates the active
+GUI listener. The old bearer is rejected immediately; open/copy the current
+private link to reconnect. A separate CLI listener rejects access when its saved
+token file changes and must be restarted explicitly. A failed save leaves the
+old file and active token intact and reports that the change was not saved.
+Token values are absent from status/error messages and request logs. The private
+link itself remains visible/copyable in this operator dialog as before.
+
+SQLite state backups do not contain this separate secret file. Explicit state
+recovery revokes saved browser access alongside old broker/agent credentials;
+choose saved-static and Generate/override again after recovery. Recovery is not
+an ordinary restart. Failed recovery before database replacement preserves the
+saved browser file. Keep profile files private; no token settings are shipped
+inside a release package.
 
 ## What the browser provides
 
@@ -120,12 +162,12 @@ gateway configuration in this release.
 | Phone cannot connect | Choose the host's reachable LAN/VPN IP, not 127.0.0.1; verify the device's network route and operator-managed firewall |
 | Start reports unavailable address | Use an IP assigned to this computer; a remote machine's address cannot be bound locally |
 | Port already in use | Stop the listener that owns it, or explicitly choose another port; another port has different browser-local storage |
-| Unauthorized/locked page | Reopen the latest private link after restart/Stop; an older token is revoked |
+| Unauthorized/locked page | Use the current link; static mode retains it through ordinary restart, while Generate/override or recovery revokes old access |
 | Data unavailable | Keep the matching VISOR broker running and check its diagnostics; the standalone web command does not replace/start the broker |
 | API refused through a proxy | Verify exact Host/Origin handling; do not disable the server's checks |
 | Saved send/action unconfirmed | Retry the original saved request; do not generate replacement request IDs |
 | Restart asks about web access | It was on at the last GUI shutdown; No is default. Use Stop before closing to suppress the next reminder |
-| Restarted service has a different private link | Each start rotates its token; open/copy the current link from Web access |
+| Restarted service has a different private link | Choose Saved static token to retain it; per-start mode rotates, and changing IP/port still changes the URL |
 | Same-named sessions | Select the readable project/provider label; internal IDs remain transport identities |
 
 ## Testing and remaining acceptance
@@ -139,3 +181,21 @@ network/TLS gateway acceptance remain separate checks.
 
 See [security](../SECURITY.md), [agent authoring](PRISM_AGENTS.md),
 [Prism format](../PRISM.md) and [release evidence](RELEASE_1_5_0.md).
+
+## Saved-token source acceptance and rollback
+
+Synthetic-token checks cover generation/override/reopen persistence, exact reuse
+through Stop/start and approved restart, no listener on save, active and separate
+listener revocation, atomic-save failure, URL/header/control rejection, private
+file permissions, explicit Windows file ACLs, broker/agent/helper isolation and
+state recovery. Native Windows ACL execution and macOS desktop behavior still
+need their target-platform acceptance; mocked ACL checks do not establish that.
+The masked desktop dialog is also rendered offscreen with a synthetic profile.
+Normal builds collect these modules through existing UI/console imports and
+include this document. They do not collect the private runtime profile file.
+The final integrated package must be rebuilt/verified before root upgrades it.
+
+For rollback, root stops browser access before using the previous source/package.
+Older builds ignore the separate saved-token file and use their per-start token
+behavior. Preserve private profile files and their owner/ACL protection; do not
+copy browser tokens into broker or agent credentials to retain an older link.

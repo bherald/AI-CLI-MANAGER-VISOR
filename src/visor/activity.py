@@ -9,13 +9,12 @@ import math
 import uuid
 from dataclasses import fields
 from datetime import datetime
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import ClassVar
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, QUrl
 from PySide6.QtGui import (
     QColor,
+    QDesktopServices,
     QFont,
     QIcon,
     QImage,
@@ -62,6 +61,7 @@ from .activity_document import (
     save_reply,
 )
 from .activity_gadgets import DirectActions, create_component
+from .activity_html import safe_html, safe_link
 from .activity_sketch import SketchPad
 from .paths import write_private
 
@@ -86,60 +86,9 @@ QMdiSubWindow { background: #17232d; }
 """
 
 
-class SafeHTML(HTMLParser):
-    """Keep useful typography, never links, embedded resources or active content."""
-    tags: ClassVar[set[str]] = {"p", "br", "hr", "h1", "h2", "h3", "h4", "b", "strong", "i", "em", "u",
-            "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "pre", "code",
-            "blockquote", "span", "div", "small", "sub", "sup"}
-    styles: ClassVar[set[str]] = {"font-size", "font-weight", "font-style",
-              "text-align", "padding", "margin", "border-collapse"}
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.parts = []
-        self.suppressed = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in {"script", "style", "iframe", "object"}:
-            self.suppressed += 1
-        if self.suppressed or tag not in self.tags:
-            return
-        safe = []
-        for name, value in attrs:
-            if name == "style":
-                rules = []
-                for rule in (value or "").split(";"):
-                    key, sep, val = rule.partition(":")
-                    if sep and key.strip().lower() in self.styles and not any(
-                            char in val for char in "()\\<>@"):
-                        rules.append(key.strip().lower() + ":" + val.strip())
-                if rules:
-                    safe.append('style="' + html.escape(";".join(rules), quote=True) + '"')
-            elif (name in {"colspan", "rowspan"} and value and len(value) <= 3
-                  and value.isascii() and value.isdecimal()):
-                safe.append(f'{name}="{min(int(value), 100)}"')
-        self.parts.append("<" + tag + (" " + " ".join(safe) if safe else "") + ">")
-
-    def handle_endtag(self, tag):
-        if tag in {"script", "style", "iframe", "object"}:
-            self.suppressed = max(0, self.suppressed - 1)
-        elif not self.suppressed and tag in self.tags:
-            self.parts.append("</" + tag + ">")
-
-    def handle_data(self, data):
-        if not self.suppressed:
-            self.parts.append(html.escape(data))
-
-
 def question_fingerprint(card):
     value = json.dumps([card["prompt"], card.get("choices", [])], ensure_ascii=False)
     return hashlib.sha256(value.encode()).hexdigest()
-
-
-def safe_html(value):
-    parser = SafeHTML()
-    parser.feed(value)
-    return "".join(parser.parts)
 
 
 class LocalTextDocument(QTextDocument):
@@ -302,6 +251,7 @@ class Card(QMdiSubWindow):
             self.content.setOpenLinks(False)
             self.content.setOpenExternalLinks(False)
             self.content.setDocument(LocalTextDocument(self.content))
+            self.content.anchorClicked.connect(self.open_text_link)
         elif kind == "sketch":
             self.content = SketchPad(data, board.policy)
             self.content.setPalette(board.palette())
@@ -427,6 +377,12 @@ class Card(QMdiSubWindow):
         self.policy_notice.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.layout.addWidget(self.policy_notice)
         self.update_card(data, initial=True)
+
+    def open_text_link(self, url):
+        """Open only a user-activated, revalidated HTTP(S) link outside the card."""
+        target = safe_link(url.toString(QUrl.ComponentFormattingOption.FullyEncoded))
+        if target is not None:
+            QDesktopServices.openUrl(QUrl(target))
 
     def update_card(self, data, initial=False):
         previous = self.data

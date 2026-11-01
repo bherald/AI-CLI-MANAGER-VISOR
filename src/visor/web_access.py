@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import ipaddress
+import secrets
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -19,7 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .prism_web import PrismWebServer
+from .prism_web import PrismWebServer, read_web_access_settings, save_web_access_settings
 
 
 def validated_bind_host(host):
@@ -35,7 +37,7 @@ def validated_bind_host(host):
 
 
 def start_web_access(manager, host, port):
-    """Start only after an explicit operator action; never reuse a saved token."""
+    """Start only after an explicit operator action; use the saved browser mode."""
     workspace = manager.ensure_workspace()
     if workspace.web_server is not None:
         return workspace.web_server
@@ -70,7 +72,7 @@ def restore_web_access(manager, parent=None):
     address = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
     accepted = QMessageBox.question(parent, "Start web access again?",
         f"Web access was on when VISOR last closed. Start it again on {address}?\n\n"
-        "A new private link will be created. Your browser will stay closed.",
+        "Your saved browser token mode will be used. Your browser will stay closed.",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
     if accepted != QMessageBox.StandardButton.Yes:
         workspace.web_was_active = False
@@ -82,7 +84,8 @@ def restore_web_access(manager, parent=None):
     except (OSError, RuntimeError, ValueError) as exc:
         manager.supervisor.status.setText("Web access is off; could not start again: " + str(exc))
         return
-    manager.supervisor.status.setText("Web access is on. Open Web access… for the new private link.")
+    kind = "saved" if read_web_access_settings(manager.supervisor.root)["mode"] == "saved_static" else "new"
+    manager.supervisor.status.setText(f"Web access is on. Open Web access… for the {kind} private link.")
 
 
 class WebAccessDialog(QDialog):
@@ -91,7 +94,7 @@ class WebAccessDialog(QDialog):
         self.manager = manager
         self.workspace = manager.ensure_workspace()
         self.setWindowTitle("Web access")
-        self.resize(610, 300)
+        self.resize(650, 410)
         layout = QVBoxLayout(self)
         note = QLabel("Optional access to VISOR sessions and Prism in your browser. "
                       "Loopback is local to this computer. For another device, choose a specific LAN/VPN IP. "
@@ -109,6 +112,34 @@ class WebAccessDialog(QDialog):
         self.port.setValue(saved if type(saved) is int and 0 <= saved <= 65535 else 0)
         self.port.setAccessibleName("Web access port")
         fields.addRow("Port", self.port)
+        self.token_mode = QComboBox()
+        self.token_mode.setAccessibleName("Browser token mode")
+        self.token_mode.addItem("New token each start", "per_start")
+        self.token_mode.addItem("Saved static token", "saved_static")
+        self.token_edit = QLineEdit()
+        self.token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token_edit.setAccessibleName("Saved browser token override")
+        self.token_edit.setPlaceholderText("Generate a strong token or enter an override")
+        self.generate_button = QPushButton("Generate")
+        self.generate_button.setAccessibleName("Generate and save browser token")
+        self.token_error = False
+        try:
+            self.token_settings = read_web_access_settings(self.manager.supervisor.root)
+        except (OSError, ValueError):
+            self.token_settings = {"mode": "per_start", "token": None}
+            self.token_error = True
+        self.token_mode.setCurrentIndex(self.token_mode.findData(self.token_settings["mode"]))
+        self.token_edit.setText(self.token_settings["token"] or "")
+        self.token_edit.setEnabled(self.token_settings["mode"] == "saved_static")
+        self.generate_button.setEnabled(self.token_settings["mode"] == "saved_static")
+        fields.addRow("Browser token", self.token_mode)
+        token_row = QHBoxLayout()
+        token_row.addWidget(self.token_edit, 1)
+        token_row.addWidget(self.generate_button)
+        fields.addRow("Static token", token_row)
+        self.token_mode.currentIndexChanged.connect(self.change_token_mode)
+        self.token_edit.editingFinished.connect(self.save_token)
+        self.generate_button.clicked.connect(self.generate_token)
         layout.addLayout(fields)
         self.status = QLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
@@ -140,6 +171,47 @@ class WebAccessDialog(QDialog):
         close.rejected.connect(self.reject)
         layout.addWidget(close)
         self.refresh()
+        if self.token_error:
+            self.status.setText("Saved browser token settings could not be read. Choose a mode and save a valid token before starting.")
+
+    def change_token_mode(self, index=None):
+        saved = self.token_mode.currentData() == "saved_static"
+        self.token_edit.setEnabled(saved)
+        self.generate_button.setEnabled(saved)
+        if saved and not self.token_edit.text():
+            active = self.workspace.web_server
+            self.token_edit.setText(active.token if active is not None else secrets.token_urlsafe(32))
+        self.save_token()
+
+    def generate_token(self):
+        self.token_edit.setText(secrets.token_urlsafe(32))
+        self.save_token()
+
+    def save_token(self):
+        mode = self.token_mode.currentData()
+        token = self.token_edit.text() if mode == "saved_static" else self.token_settings["token"]
+        try:
+            settings = save_web_access_settings(self.manager.supervisor.root, mode, token)
+        except ValueError as exc:
+            self.status.setText(str(exc) + ". Current browser token is unchanged.")
+            return False
+        except OSError:
+            self.status.setText("Browser token could not be saved. Current browser token is unchanged; try again.")
+            return False
+        changed = settings != self.token_settings
+        self.token_settings = settings
+        self.token_error = False
+        server = self.workspace.web_server
+        if server is not None and (changed or mode == "saved_static"):
+            try:
+                server.rotate_browser_token(token if mode == "saved_static" else secrets.token_urlsafe(32),
+                                            saved_static=mode == "saved_static")
+            except (OSError, ValueError):
+                self.status.setText("Browser token was saved, but the active link could not update. Stop and start web access to reload it.")
+                return True
+        self.refresh()
+        self.status.setText("Browser token mode saved privately" + ("; active link updated." if changed and server is not None else "."))
+        return True
 
     def refresh(self):
         server = self.workspace.web_server
@@ -156,7 +228,8 @@ class WebAccessDialog(QDialog):
             self.bind_ip.setText(origin.host())
             self.port.setValue(origin.port())
             self.private_link.setText(server.origin + "/visor#token=" + server.token)
-            self.status.setText("On · Private operator access. Stop revokes this link.")
+            suffix = "Saved static token; Generate or override revokes the old token." if self.token_settings["mode"] == "saved_static" else "New token each start."
+            self.status.setText("On · Private operator access. " + suffix)
         else:
             self.private_link.clear()
             self.status.setText("Off · Start when you need browser access.")
@@ -164,6 +237,13 @@ class WebAccessDialog(QDialog):
     def start_access(self):
         if self.workspace.web_server is not None:
             self.refresh()
+            return
+        if self.token_error:
+            self.status.setText("Choose a browser token mode and save valid settings before starting.")
+            return
+        mode = self.token_mode.currentData()
+        changed = mode != self.token_settings["mode"] or mode == "saved_static" and self.token_edit.text() != self.token_settings["token"]
+        if changed and not self.save_token():
             return
         try:
             start_web_access(self.manager, self.bind_ip.text(), self.port.value())

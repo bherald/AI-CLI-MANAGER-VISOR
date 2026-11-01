@@ -69,7 +69,7 @@ Every document has `schema_version: 1`, a stable `id`, `title`, positive `revisi
 
 | Kind | Content |
 | --- | --- |
-| `text` | `html`: useful typography and tables; scripts, links and external resources are removed from rendering |
+| `text` | `html`: bounded typography/table styling and explicit HTTP(S) links; scripts and embedded resources are removed |
 | `image` | `path`: relative PNG/JPEG/WebP/GIF/BMP inside the document directory; publishing uploads it into private broker storage |
 | `diagram` | `nodes: [{id,label,x,y,w,h,color}]`, `edges: [{from,to,label}]` |
 | `chart` | `labels: [text]`, `values: [number]`, optional `unit` |
@@ -96,8 +96,9 @@ See the [Prism defect ledger](docs/PRISM_DEFECTS.md) for corrected failures and 
 
 ## Crisp tables and contextual help
 
-Use the `table` component for portable styling. Arbitrary HTML/CSS styling is not
-the table authoring interface. `activity_catalog(kind="table")` supplies the
+Use the `table` component for portable interactive styling. Text cards also retain
+bounded static table formatting and explicit HTTP(S) links; see
+[safe HTML formatting](docs/PRISM_HTML.md). `activity_catalog(kind="table")` supplies the
 machine-readable schema, limits, styled examples and `clean`, `project`,
 `metrics`, `risk` presets. Copy a preset into `table_style`, then adjust useful
 details. [Styled project example](examples/prism/styled-project.json).

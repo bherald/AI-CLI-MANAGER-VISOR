@@ -266,8 +266,9 @@ class ActivityUICase(unittest.TestCase):
         value = "<h2>Keep text</h2><script>DROP</script><img src='file:///private.png'><a href='https://example.invalid'>Label</a><p style='color:red;background-color:url(file:///x)'>More</p>"
         clean = safe_html(value)
         self.assertIn("Keep text", clean)
-        for forbidden in ("DROP", "src=", "href=", "url(", "<img", "<script"):
+        for forbidden in ("DROP", "src=", "url(", "<img", "<script"):
             self.assertNotIn(forbidden, clean)
+        self.assertIn('href="https://example.invalid"', clean)
         doc = LocalTextDocument()
         for url in ("file:///private.png", "https://example.invalid/image.png"):
             self.assertTrue(doc.loadResource(2, QUrl(url)).isNull())

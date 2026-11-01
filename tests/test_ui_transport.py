@@ -102,6 +102,7 @@ class UICase(unittest.TestCase):
 
     def test_draft_writes_are_serialized_and_new_text_wins(self):
         saved, pending = {}, []
+        self.window.draft_ready = True
         class Client:
             def call(self, action, **params):
                 self_action = action
@@ -522,7 +523,7 @@ class UICase(unittest.TestCase):
             for state in ("queued", "held", "delivery_unknown", "acknowledged", "completed", "failed")]
         self.window.message_filter.setCurrentIndex(1)
         self.window.render_messages()
-        self.assertEqual(self.window.messages.rowCount(), 4)
+        self.assertEqual(self.window.messages.rowCount(), 3)
         self.window.message_filter.setCurrentIndex(2)
         self.assertEqual(self.window.messages.rowCount(), 2)
         with patch("visor.ui.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), patch.object(self.window, "rpc") as rpc:
