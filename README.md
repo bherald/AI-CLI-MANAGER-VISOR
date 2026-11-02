@@ -1,15 +1,16 @@
 # VISOR — AI CLI session supervisor
 
-**1.5.0 beta 6 source:** quiet agent inboxes, scoped automatic card
+**1.5.0 beta 6 is published:** quiet agent inboxes, scoped automatic card
 publishing, guarded session recovery, durable Send and saved browser-token
-settings. Source and local Linux acceptance are available. Downloaded packages
-identify their exact source revision and checksums on the release page. See [changes and upgrade scope](docs/RELEASE_1_5_0_BETA_6.md).
+settings. [Download the four platform packages, matching source and checksums](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.6).
+Build `2026-11-02-quiet-publisher-r12` comes from source `c633c406`.
+See [changes, verification limits and upgrade steps](docs/RELEASE_1_5_0_BETA_6.md).
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. Use the supervisor to find and resume exact sessions, bring terminals forward, connect selected agents, and follow their coordination messages through delivery, acknowledgment and completion. Session communication and its local message history are a core part of VISOR, alongside terminal management and graceful wrap-up.
 
 **1.5.0 beta 5 introduced one Prism workspace, rich controls and optional VISOR + Prism web access.** That release added one desktop home for all boards, readable session names, collapsed card actions, multi-row selection, a portable gadget catalog and an optional combined sessions/messages/Prism view for phone, tablet and browser. The additive table/agent work keeps version 1.5.0. See [what changed and validation](docs/RELEASE_1_5_0.md) and the [Prism design](docs/PRISM_DESIGN.md). The preceding release is [1.5.0 beta 5](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5). Exact-tag source/build/extracted-package CI passed on Windows, Linux and both Mac architectures. Interactive Windows/Mac, physical-device and complete accessibility acceptance remain pending.
 
-Published packages are listed under [GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases). Exit an older supervisor before launching a new download; extract and keep the complete package directory together. The title and **About / diagnostics** identify the running version and executable.
+Verify the download against its adjacent SHA-256 file and extract the complete package directory. Use **Leave running and close** before upgrading an older supervisor. Launch `visor/visor.exe` on Windows, `visor/visor` on Linux or `visor.app` on macOS. If a desktop shortcut still opens an older build, update its target to the new installation. The title and **About / diagnostics** identify the running build and executable; replacing files or a shortcut does not update an already-running supervisor.
 
 Source is MIT licensed. Provider accounts, provider software and their normal permissions remain yours to manage. VISOR does not bypass provider approvals.
 
@@ -83,7 +84,7 @@ Run `python3.12 scripts/native_build.py` on Linux/macOS or `py -3.12 scripts/nat
 
 Windows packages contain `visor/visor.exe`; Linux packages contain `visor/visor`. Extract and keep the complete directory together. `visor-console` is the companion diagnostic/helper executable. macOS packaging produces `visor.app` with an embedded helper, using an ad-hoc signature; Developer ID signing and notarization are pending. Build output and checksums live under `dist/`, with `dist/latest-build.json` identifying the current local build.
 
-The GitHub workflow covers Windows, Linux, Apple silicon and Intel Mac jobs. The [Mac follow-up run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39462649997) passed both Mac architectures, including signing and extracted-package/upgrade checks. Interactive desktop results remain unverified. Successful main-branch pushes, manual runs and version-tag builds retain verified evaluation archives and checksums for seven days. Tagged GitHub releases provide persistent public downloads after exact artifact review.
+The [beta 6 CI run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/41507797095) passed source, native build and extracted-package checks on Windows, Linux and both Mac architectures. Interactive Windows/Mac, physical-device and complete accessibility acceptance remain open. Successful main-branch pushes, manual runs and version-tag builds retain evaluation archives and checksums for seven days; the reviewed beta 6 assets are persistent release downloads.
 
 Default state directories are `%LOCALAPPDATA%/Visor`, `~/Library/Application Support/Visor`, and `${XDG_DATA_HOME:-~/.local/share}/visor`. `--data-dir` isolates VISOR state, **not provider discovery or provider history**. Use disposable provider sessions when testing deletion. Data and messages remain local and unencrypted at rest; see [security](SECURITY.md).
 

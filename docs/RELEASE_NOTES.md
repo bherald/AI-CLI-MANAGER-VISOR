@@ -1,19 +1,26 @@
-# 1.5.0 beta 6 — local communication candidate
+# 1.5.0 beta 6 — published 2026-11-02
 
+- Keep routine agent coordination in inspectable quiet inboxes; explicit attention and operator messages remain visible. Quiet delivery does not wake idle workers.
+- Delegate updates to selected Prism cards without changing their contributors or operator-command recipients.
+- Resume selected saved sessions with fresh checks and per-session results.
+- Retain generated or selected static browser tokens across normal restarts, with guarded rotation and Windows private-file checks.
 - Keep healthy Codex recipients progressing while another recipient is slow.
 - Preserve native Send requests through uncertain responses and restart.
 - Inspect exact agent replies and compose guarded follow-ups in the native UI.
 - Show held, failed and uncertain messages under Needs attention.
 - Preserve valid Unicode drafts and messages through the typed RPC limits.
 
-Build `2026-11-01-communication-r6`; not published. See the
-[candidate evidence and upgrade scope](RELEASE_1_5_0_BETA_6.md).
+Build `2026-11-02-quiet-publisher-r12`, tag `v1.5.0-beta.6`, source `c633c406`.
+[Downloads and checksums](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.6)
+include Windows, Linux, both Mac architectures and matching source. All four passed
+[CI and extracted-package checks](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/41507797095).
+See [release evidence, remaining limits and upgrade steps](RELEASE_1_5_0_BETA_6.md).
 
 # 1.5.0 beta 5 — published 2026-10-27
 
 [Download and checksums](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5). Exact-tag source, native-build and extracted-package jobs passed on Windows, Ubuntu, Apple Silicon Mac and Intel Mac. Interactive/native-device limits remain open. Beta 5 fixes test-fixture privacy and IPv6-format assumptions without changing the reviewed runtime build. The feature list below describes the 1.5.0 implementation.
 
-# 1.5.0 local candidate — rich Prism workspace
+# 1.5.0 rich Prism workspace — historical candidate, shipped in beta 5
 
 - Consolidate floating Prism boards into one resizable desktop workspace with wide previous/next controls, a readable board picker and compact connected-session names.
 - Put secondary board/card controls and messages in default-closed accordions. Preserve drafts, saved layouts, quiet dismissal/reopen and the concise title/time and 8pt footer.

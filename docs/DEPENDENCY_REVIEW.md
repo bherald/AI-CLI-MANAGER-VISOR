@@ -1,4 +1,21 @@
-# Dependency distribution review — 2026-10-19
+# Dependency distribution review
+
+## Published beta 6 — 2026-11-02
+
+The [beta 6 archives](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.6)
+come from `c633c406` and passed [all four native CI jobs](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/41507797095).
+Their actual native inventories, original notices, corresponding-source pointers
+and platform redistribution evidence were reviewed before publication. Read each
+archive's `build-manifest.json`, `native-binaries.json` and `dependency-sources.json`
+for its exact versions; the historical metadata table below is not that inventory.
+
+Windows includes OpenSSL 3.5.9. The complete upstream 3.5.9 Apache 2.0 license is
+byte-identical to the packaged 3.5.5 notice. Its original notice remains unchanged;
+the [matching 3.5.9 source archive](https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz)
+identifies the shipped version. Windows remains unsigned; Mac binaries are ad-hoc
+signed and not notarized. Interactive and clean-machine acceptance remain separate.
+
+## Historical metadata review — 2026-10-19
 
 This records inspected local metadata, not completed binary-distribution clearance.
 Source publication under VISOR's MIT license and distribution of bundled dependencies are separate checks.

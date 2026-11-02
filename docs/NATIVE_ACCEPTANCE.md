@@ -5,7 +5,7 @@ Do not copy Windows `.venv`, `build`, `dist`, caches, VISOR data or provider cre
 Each machine needs its own native Python 3.12, uv, provider executables and provider login.
 Linux build/extracted-package and bounded X11 adapter checks have passed on Ubuntu/KWin;
 see [LINUX_ACCEPTANCE.md](LINUX_ACCEPTANCE.md). Full desktop/provider acceptance and
-native macOS acceptance remain pending.
+interactive macOS acceptance remain pending.
 
 The current lockfile selects PySide6 6.12.0: its macOS wheel targets macOS 14+; Linux x86_64
 targets glibc 2.34+ and Linux ARM64 targets glibc 2.39+. These are wheel requirements observed

@@ -1,6 +1,6 @@
 # macOS experimental port
 
-**Hosted Apple silicon and Intel builds and extracted-package acceptance now pass. Interactive Mac desktop acceptance remains unverified.** The [successful follow-up jobs](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39462649997) include source tests, native AppleScript compilation, offscreen UI startup, helper/app signature checks, broker restart, simulated provider transport and relocation/upgrade checks. These results do not establish Finder, Automation permissions or live window-control behavior.
+**Beta 6 Apple silicon and Intel packages are [published](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.6). Interactive Mac desktop acceptance remains unverified.** Their [exact-source CI jobs](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/41507797095) passed source tests, native AppleScript compilation, offscreen UI startup, helper/app signature checks, broker restart, simulated provider transport and relocation/upgrade checks. These results do not establish Finder, Automation permissions or live window-control behavior.
 
 ## Implemented and checkable without a Mac
 
@@ -32,7 +32,7 @@ python3.12 scripts/native_build.py
 .venv/bin/python scripts/run.py --doctor
 ```
 
-The workflow in `.github/workflows/ci.yml` includes `macos-14` (Apple silicon) and `macos-15-intel`. After an approved GitHub push, inspect each job independently. Manual and version-tag Actions runs retain downloadable evaluation archives for seven days. It does not create a public Release.
+The workflow in `.github/workflows/ci.yml` includes `macos-14` (Apple silicon) and `macos-15-intel`. Inspect each job independently. Successful main pushes, manual and version-tag runs retain evaluation archives for seven days. The workflow does not itself publish a Release; the separately reviewed beta 6 downloads are available at the link above.
 
 GitHub supplies hosted Mac machines; nothing needs to be cloned or installed to emulate a Mac locally. See [GitHub runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). PyInstaller builds are specific to the host OS: [PyInstaller documentation](https://pyinstaller.org/en/stable/operating-mode.html). We cannot produce a verified Mac app from this Linux build host.
 
@@ -51,6 +51,6 @@ Use a disposable project and provider conversations. A separate VISOR data direc
 
 Record failures in [NATIVE_TEST_REPORT.md](NATIVE_TEST_REPORT.md) and update [STATUS.md](STATUS.md) only with actual evidence.
 
-## Distribution still pending
+## Signing and interactive acceptance still pending
 
 No Developer ID certificate, hardened-runtime/notarization validation, Gatekeeper acceptance or clean-machine result is claimed. The current Mac package design uses an ad-hoc signature. Do not instruct users to disable OS protection. Terminal permission attribution for the embedded helper still needs a real Mac check. Apple silicon and Intel outputs must each pass their own build and desktop checks before claiming support.

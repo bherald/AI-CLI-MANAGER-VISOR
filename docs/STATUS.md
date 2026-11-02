@@ -1,17 +1,26 @@
-# Local communication candidate
-
-**VISOR 1.5.0 beta 6**, build `2026-11-01-communication-r6`, is being prepared
-locally. See [the candidate packet](RELEASE_1_5_0_BETA_6.md) for changes and
-validation boundaries. Its source preparation does not install or publish it.
-
 # Current published beta release
+
+**VISOR 1.5.0 beta 6** is public, tag `v1.5.0-beta.6`, source `c633c406`, build
+`2026-11-02-quiet-publisher-r12`. The [release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.6)
+contains checksum-verified Windows, Linux, Apple silicon Mac and Intel Mac
+archives plus matching source. [CI 41507797095](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/41507797095)
+passed all four native builds and extracted-package checks. Actual archive
+inventories, notices and source correspondence were reviewed before publication.
+
+Quiet inboxes, scoped card publishing, selected-session recovery, durable Send
+and saved browser tokens are described in [the beta 6 guide](RELEASE_1_5_0_BETA_6.md).
+Windows is unsigned; Mac packages are ad-hoc signed and not notarized. Interactive
+Windows/Mac, physical-device and complete accessibility acceptance remain open.
+Main-branch documentation corrections do not retarget the release or rebuild its assets.
+
+# Earlier published beta 5
 
 **VISOR 1.5.0 beta 5** is public, tag `v1.5.0-beta.5`, runtime build `2026-10-27-prism-table-agent-ui-r5`.
 The [release](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5) includes checksum-verified Windows, Linux, Apple Silicon Mac and Intel Mac packages plus a sanitized source archive.
 [Exact-tag CI](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/40520947000) passed all four native jobs, including source, build and extracted-package checks. Local Linux/X11 delivery and both web restart choices also passed. Web access remains optional and off by default.
 
 Beta 5 corrects cross-platform test fixtures for equivalent IPv6 spellings and private Windows data roots. The r5 runtime additionally preserves Unicode in machine JSON on legacy Windows consoles. Earlier beta tags are retained; no failed platform package was published.
-Interactive Windows/Mac, physical mobile devices, complete accessibility and dependency-distribution acceptance remain open. See [release details](RELEASE_1_5_0.md).
+That release's interactive Windows/Mac, physical mobile devices, complete accessibility and dependency-distribution acceptance were not established by its CI. See [release details](RELEASE_1_5_0.md).
 
 # Earlier beta status and evidence
 
