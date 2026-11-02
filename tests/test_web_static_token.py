@@ -17,6 +17,7 @@ from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox
 
 from visor.broker import Broker
+from visor.data_security import ensure_windows_private
 from visor.paths import write_private
 from visor.prism_web import (
     PrismWebServer,
@@ -36,6 +37,8 @@ class WebStaticTokenCase(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        if os.name == "nt":
+            ensure_windows_private(self.root, created=True)
         self.workspace = SimpleNamespace(web_server=None, web_port=0, web_host="127.0.0.1",
                                          web_was_active=False, save_preferences=Mock())
         self.manager = SimpleNamespace(supervisor=SimpleNamespace(root=self.root, status=Mock()),
@@ -94,7 +97,11 @@ class WebStaticTokenCase(unittest.TestCase):
         reopened = self.dialog()
         self.assertEqual(reopened.token_mode.currentData(), "saved_static")
         self.assertEqual(reopened.token_edit.text(), "synthetic-static-override_20261101")
-        self.assertEqual(stat.S_IMODE((self.root / "web-access.json").stat().st_mode), 0o600)
+        token_path = self.root / "web-access.json"
+        if os.name == "nt":
+            ensure_windows_private(token_path, created=False, file=True)
+        else:
+            self.assertEqual(stat.S_IMODE(token_path.stat().st_mode), 0o600)
         self.factory.assert_not_called()
         self.assertIsNone(self.workspace.web_server)
 
