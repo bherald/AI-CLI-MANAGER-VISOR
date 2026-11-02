@@ -69,9 +69,13 @@ bootloader exception allows the generated application to retain its own license.
 The build also copies immutable upstream notices for OpenSSL3.0.16/3.5.5,
 Mesa11.2.2, LLVM3.6.2 and the complete CPython3.12.10 license chapter. These
 address components observed in the preceding Windows/Mac packages; exact
-current payload versions and hashes remain part of artifact review. Full
-Microsoft redistribution restrictions are retained rather than inferred from
-a DLL filename. Snapshot manifests identify the original source and exact bytes.
+current payload versions and hashes remain part of artifact review.
+The preceding Windows package's copied `CPython-LICENSE.txt` retains additional
+Microsoft conditions for that Windows binary build. The separate CPython
+documentation license chapter supplies third-party notices; it is not the full
+Visual Studio EULA or proof of every fresh DLL's origin. Match the new Windows
+payload to its actual interpreter/wheel/runtime sources and applicable terms.
+Snapshot manifests identify the original source and exact bytes.
 They are a documented superset, not a claim that every component is shipped on
 every OS. Successful builds retain evaluation archives for review; final release
 publication requires checking the actual archive and corresponding-source links.

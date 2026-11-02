@@ -576,7 +576,8 @@ class MCPCase(unittest.TestCase):
             "send", "receive", "acknowledge", "operator_reply", "peers", "activity_list", "activity_get",
             "activity_publish", "activity_control", "activity_asset", "activity_replies",
             "activity_acknowledge", "activity_share", "activity_catalog", "activity_template",
-            "activity_events", "activity_update_card", "activity_validate"})
+            "activity_events", "activity_update_card", "activity_validate",
+            "activity_publisher_get", "activity_publisher_grant", "activity_publisher_revoke"})
 
     def test_reject_sender_parameter(self):
         with self.assertRaises(ValueError):

@@ -60,7 +60,7 @@ class OperatorMessageAPITests(unittest.TestCase):
             self.assertEqual(self.http('message_get', {'message': self.parent['id']}, role)[0], 400)
         status, ping = self.http('ping', {})
         self.assertEqual(status, 200)
-        self.assertEqual(ping['result']['capabilities'], ['message_get', 'operator_reply'])
+        self.assertEqual(ping['result']['capabilities'], ['message_get', 'operator_reply', 'quiet_agent_inbox'])
         self.assertEqual(ping['result']['limits'], {'message_max_chars': 16000, 'max_rpc_bytes': 65536})
 
     def test_new_actions_reject_extra_fields_wrong_types_and_inferred_roles(self):
