@@ -19,15 +19,15 @@ class NativeDependencyNoticesCase(unittest.TestCase):
         self.source = self.root / "libfixture.so.1"
         self.source.write_bytes(b"\x7fELFcomplete fixture binary")
         self.analysis = self.root / "Analysis-00.toc"
-        self.analysis.write_text(repr(([('libfixture.so.1', str(self.source), 'BINARY')],)))
+        self.analysis.write_text(repr(([('libfixture.so.1', str(self.source), 'BINARY')],)), encoding="utf-8")
         self.native = [{"path": "_internal/libfixture.so.1", "sha256": hashlib.sha256(self.source.read_bytes()).hexdigest()}]
         self.doc = self.root / "doc"
         (self.doc / "libfixture1").mkdir(parents=True)
         self.notice = self.doc / "libfixture1/copyright"
-        self.notice.write_text("Full copyright José 尾\nSee /usr/share/common-licenses/LGPL-2.1.\n")
+        self.notice.write_text("Full copyright José 尾\nSee /usr/share/common-licenses/LGPL-2.1.\n", encoding="utf-8")
         self.common = self.root / "common"
         self.common.mkdir()
-        (self.common / "LGPL-2.1").write_text("Complete referenced license\n")
+        (self.common / "LGPL-2.1").write_text("Complete referenced license\n", encoding="utf-8")
 
     def run_collection(self, runner=None):
         def lookup(args, **_kwargs):
@@ -51,7 +51,7 @@ class NativeDependencyNoticesCase(unittest.TestCase):
     def test_ambiguous_original_sources_are_reported_without_a_guessed_notice(self):
         other = self.root / "other.so"
         other.write_bytes(b"other")
-        self.analysis.write_text(repr([('libfixture.so.1', str(p), 'BINARY') for p in [self.source, other]]))
+        self.analysis.write_text(repr([('libfixture.so.1', str(p), 'BINARY') for p in [self.source, other]]), encoding="utf-8")
         report = self.run_collection(lambda *_args, **_kwargs: self.fail("Ambiguous input must not query or choose an owner"))
         self.assertEqual(report["issues"][0]["reason"], "ambiguous_native_source")
         self.assertEqual(report["packages"], [])
@@ -66,7 +66,7 @@ class NativeDependencyNoticesCase(unittest.TestCase):
         wheel = self.root / "wheel.so"
         wheel.write_bytes(b"\x7fELFwheel")
         self.analysis.write_text(repr([('libfixture.so.1', str(self.source), 'BINARY'),
-                                       ('wheel.so', str(wheel), 'EXTENSION')]))
+                                       ('wheel.so', str(wheel), 'EXTENSION')]), encoding="utf-8")
         self.native.append({"path": "_internal/wheel.so", "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest()})
         calls = []
         def lookup(args, **_kwargs):
@@ -85,7 +85,7 @@ class NativeDependencyNoticesCase(unittest.TestCase):
     def test_copyright_symlink_outside_documentation_is_not_copied(self):
         self.notice.unlink()
         secret = self.root / "not-a-notice"
-        secret.write_text("synthetic private marker")
+        secret.write_text("synthetic private marker", encoding="utf-8")
         self.notice.symlink_to(secret)
         report = self.run_collection()
         self.assertEqual(report["issues"][0]["reason"], "package_metadata_or_copyright_missing")
@@ -102,7 +102,7 @@ class NativeDependencyNoticesCase(unittest.TestCase):
     def test_extracted_metadata_references_cannot_read_outside_the_package(self):
         resources = self.root / "package"
         resources.mkdir()
-        (resources / "dependency-sources.json").write_text("{}")
+        (resources / "dependency-sources.json").write_text("{}", encoding="utf-8")
         self.assertEqual(package_resource(resources, "dependency-sources.json"), resources / "dependency-sources.json")
         for name in ["../libfixture.so.1", str(self.source), None]:
             with self.subTest(name=name), self.assertRaises((RuntimeError, TypeError)):
@@ -121,7 +121,7 @@ class NativeDependencyNoticesCase(unittest.TestCase):
         (source / "LICENSE").write_bytes(raw)
         manifest = {"component": "fixture", "version": "1.0", "files": [
             {"path": "LICENSE", "sha256": hashlib.sha256(raw).hexdigest()}]}
-        (source / "manifest.json").write_text(json.dumps(manifest))
+        (source / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         self.assertEqual(copy_reviewed_snapshot(source, self.root / "licenses"), manifest)
         self.assertEqual((self.root / "licenses/upstream-fixture-1.0/LICENSE").read_bytes(), raw)
         (source / "LICENSE").write_bytes(raw + b"changed")
