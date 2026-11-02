@@ -45,7 +45,7 @@ from .providers import (
 from .store import PolicyError, Store, canonical_uuid, operator_reply_input
 
 log = logging.getLogger(__name__)
-BUILD = "2026-11-02-session-recovery-r10"
+BUILD = "2026-11-02-windows-token-identity-r11"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "

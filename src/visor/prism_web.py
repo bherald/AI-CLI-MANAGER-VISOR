@@ -104,7 +104,10 @@ def _assert_separate_browser_token(root, token):
 
 
 def _file_identity(info):
-    return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_mode, info.st_uid
+    # CPython 3.12 Windows stat(path) keeps legacy creation ctime, while
+    # fstat(fd) exposes ChangeTime. Birth time is comparable across both.
+    stamp = getattr(info, "st_birthtime_ns", info.st_ctime_ns) if os.name == "nt" else info.st_ctime_ns
+    return info.st_dev, info.st_ino, info.st_mtime_ns, stamp, info.st_size, info.st_mode, info.st_uid
 
 
 def read_web_access_settings(root, *, with_identity=False):
@@ -126,7 +129,9 @@ def read_web_access_settings(root, *, with_identity=False):
         except (ValueError, UnicodeError) as exc:
             raise ValueError("Browser token settings are invalid") from exc
         identity = _file_identity(info)
-        if _file_identity(os.fstat(stream.fileno())) != identity or _file_identity(path.stat()) != identity:
+        after = os.fstat(stream.fileno())
+        if (after.st_ctime_ns != info.st_ctime_ns or _file_identity(after) != identity
+                or _file_identity(path.stat()) != identity):
             raise ValueError("Browser token settings changed; try again")
     value = _validated_web_settings(value)
     return (value, identity) if with_identity else value

@@ -62,6 +62,13 @@ Browser settings live separately in owner-private `web-access.json`, outside the
 broker's generic settings and agent/helper credential tables. POSIX requires the
 current owner and mode0600 (private directory); Windows checks the directory and
 the existing secret file's ACL. Generate uses fresh cryptographic randomness.
+Windows file identity uses creation time when comparing an opened descriptor
+with its path: CPython 3.12 reports different `ctime` meanings for those two
+queries. The read still checks the descriptor's raw change time before/after,
+plus file identity, modification time, size, type and owner. Existing ACL,
+symlink, atomic-save and token-revocation checks remain in effect. See the
+[CPython path-stat implementation](https://github.com/python/cpython/blob/v3.12.10/Modules/posixmodule.c#L2015)
+and [descriptor metadata implementation](https://github.com/python/cpython/blob/v3.12.10/Python/fileutils.c#L1036).
 Overrides accept 1–512 URL/header-safe ASCII letters, digits and `. _ ~ -`;
 spaces, controls, full URLs, bearer headers and other characters are refused.
 Use Generate when you want a strong token.

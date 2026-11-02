@@ -197,6 +197,39 @@ class WebStaticTokenCase(unittest.TestCase):
             with self.assertRaises(ValueError):
                 save_web_access_settings(self.root, "saved_static", "synthetic-new-token")
 
+    def windows_metadata_read(self, *, descriptor_changed=False, path_replaced=False):
+        """Model CPython's descriptor ChangeTime versus path's legacy creation ctime."""
+        save_web_access_settings(self.root, "saved_static", "synthetic-windows-identity")
+        path = self.root / "web-access.json"
+        actual = path.stat()
+        names = ("st_dev", "st_ino", "st_mtime_ns", "st_ctime_ns", "st_size", "st_mode", "st_uid")
+        fields = {name: getattr(actual, name) for name in names}
+        birthtime = getattr(actual, "st_birthtime_ns", actual.st_ctime_ns)
+        path_info = SimpleNamespace(**{**fields, "st_birthtime_ns": birthtime, "st_ctime_ns": birthtime,
+                                       "st_ino": fields["st_ino"] + int(path_replaced)})
+        before = SimpleNamespace(**{**fields, "st_birthtime_ns": birthtime, "st_ctime_ns": birthtime + 1000})
+        after = SimpleNamespace(**{**vars(before), "st_ctime_ns": before.st_ctime_ns + int(descriptor_changed)})
+        windows_os = SimpleNamespace(name="nt", O_RDONLY=os.O_RDONLY, O_NOFOLLOW=getattr(os, "O_NOFOLLOW", 0),
+                                     open=os.open, fdopen=os.fdopen, fstat=Mock(side_effect=[before, after]))
+        # Only the metadata comparison is synthetic. Existing actual platform
+        # privacy/ACL and saved-token tests remain unchanged and unskipped.
+        with patch("visor.prism_web._web_settings_path", return_value=path), \
+                patch("visor.prism_web.os", windows_os), patch.object(type(path), "stat", return_value=path_info):
+            return read_web_access_settings(self.root, with_identity=True)
+
+    def test_stable_windows_metadata_read_accepts_creation_time_identity(self):
+        value, identity = self.windows_metadata_read()
+        self.assertEqual(value, {"mode": "saved_static", "token": "synthetic-windows-identity"})
+        self.assertIsNotNone(identity)
+
+    def test_windows_descriptor_change_time_still_detects_mutation_during_read(self):
+        with self.assertRaisesRegex(ValueError, "settings changed"):
+            self.windows_metadata_read(descriptor_changed=True)
+
+    def test_windows_path_replacement_still_refuses_same_size_and_times(self):
+        with self.assertRaisesRegex(ValueError, "settings changed"):
+            self.windows_metadata_read(path_replaced=True)
+
     def test_per_start_mode_retains_saved_choice_but_rotates_runtime_capability(self):
         save_web_access_settings(self.root, "saved_static", "synthetic-static-choice")
         dialog = self.dialog()
