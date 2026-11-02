@@ -1,10 +1,9 @@
 """Real loopback RPC boundaries; synthetic data, no broker delivery worker/providers."""
+import http.client
 import json
 import tempfile
 import threading
 import unittest
-import urllib.error
-import urllib.request
 import uuid
 from pathlib import Path
 
@@ -58,22 +57,35 @@ class NativeDraftRPCTests(unittest.TestCase):
         self.assertEqual(len(self.broker.store.messages()), 1)
 
     def test_large_requests_require_exact_authorized_header_action_and_auth(self):
-        cases = [("message_draft", "send", self.broker.token),
-                 ("send", "message_draft", self.broker.token),
-                 ("message_draft", "", self.broker.token),
-                 ("ping", "message_draft", self.broker.token),
-                 ("message_draft", "message_draft", "invalid")]
-        for action, hint, token in cases:
+        cases = [("message_draft", "send", self.broker.token, False),
+                 ("send", "message_draft", self.broker.token, True),
+                 ("message_draft", "", self.broker.token, False),
+                 ("ping", "message_draft", self.broker.token, True),
+                 ("message_draft", "message_draft", "invalid", False)]
+        for action, hint, token, send_body in cases:
             with self.subTest(action=action, hint=hint, authenticated=token != "invalid"):
                 params = self.pending if action == "send" else {"value": self.draft}
-                request = urllib.request.Request(f"http://127.0.0.1:{self.server.server_port}/rpc",
-                    data=json.dumps({"action": action, "params": params}).encode(),
-                    headers={"Authorization": "Bearer " + token, "X-Visor-Action": hint})
-                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-                with self.assertRaises(urllib.error.HTTPError) as rejected:
-                    opener.open(request, timeout=5)
-                self.assertEqual(rejected.exception.code, 400)
-                rejected.exception.close()
+                body = json.dumps({"action": action, "params": params}).encode()
+                connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+                try:
+                    connection.putrequest("POST", "/rpc")
+                    connection.putheader("Content-Length", str(len(body)))
+                    connection.putheader("Authorization", "Bearer " + token)
+                    connection.putheader("X-Visor-Action", hint)
+                    connection.endheaders()
+                    # Authentication/size rejection happens before body admission.
+                    # Read that response without racing a write to a closed socket.
+                    if send_body:
+                        connection.send(body)
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 400)
+                    error = json.loads(response.read())["error"]
+                    expected = ("Authentication required" if token == "invalid" else
+                                "RPC request size must be" if not send_body else
+                                "Large requests require a matching permitted action")
+                    self.assertIn(expected, error)
+                finally:
+                    connection.close()
         self.assertIsNone(self.broker.store.get_setting("message_draft"))
         self.assertEqual(self.broker.store.messages(), [])
 
