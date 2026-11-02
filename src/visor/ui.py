@@ -263,6 +263,10 @@ class Window(QMainWindow):
         stats.addWidget(self.counts, 1)
         stats.addWidget(self.open_only)
         stats.addWidget(button("Show all", self.clear_session_filters))
+        self.resume_sessions_button = button("Resume selected…", self.resume_selected_sessions)
+        self.resume_sessions_button.setToolTip(
+            "Open terminals for selected saved sessions. Loaded, linked and uncertain sessions are skipped.")
+        stats.addWidget(self.resume_sessions_button)
         self.delete_sessions_button = button("Delete selected sessions…", self.delete_selected_sessions)
         stats.addWidget(self.delete_sessions_button)
         outer.addLayout(stats)
@@ -460,11 +464,11 @@ class Window(QMainWindow):
                 self.poll()
         self.job(lambda: client.call(action, **params), finished)
 
-    def rpc_batch(self, action, requests, title, callback=None):
+    def rpc_batch(self, action, requests, title, callback=None, report=None):
         """Use existing guarded item APIs, continuing after individual failures."""
         if not requests:
             return
-        if len(requests) == 1:
+        if len(requests) == 1 and report is None:
             identity, params = requests[0]
             if callback is None:
                 self.rpc(action, **params)
@@ -477,22 +481,27 @@ class Window(QMainWindow):
             return
         self.status.setText(f"{title}: processing {len(requests)} selected items…")
         def run():
-            completed, errors = set(), []
+            completed, errors, outcomes = set(), [], {}
             for identity, params in requests:
                 try:
                     client.call(action, **params)
                     completed.add(identity)
+                    outcomes[identity] = (True, "")
                 except Exception as exc:  # noqa: BLE001 -- report each broker failure and continue the batch
                     errors.append(str(exc))
-            return completed, errors
+                    outcomes[identity] = (False, str(exc))
+            return completed, errors, outcomes
         def finished(result, error):
-            completed, errors = result if not error else (set(), [str(error)])
+            completed, errors, outcomes = result if not error else (set(), [str(error)], {
+                identity: (False, str(error)) for identity, _params in requests})
             self.status.setText(f"{title}: {len(completed)} of {len(requests)} completed"
                                 + (f"; {len(errors)} failed. Surviving selections are retained." if errors else "."))
             if callback:
                 callback(completed)
             self.poll()
-            if errors:
+            if report:
+                report(outcomes)
+            elif errors:
                 QMessageBox.warning(self, title, f"{len(completed)} of {len(requests)} selected items completed.\n\n"
                                     + "\n".join(errors[:8]))
         self.job(run, finished)
@@ -598,7 +607,8 @@ class Window(QMainWindow):
         for row, session in enumerate(visible):
             key = session["id"]
             unattached = self.is_open(session) and session["provider"] == "codex" and session["status"] == "disconnected"
-            status = "Not attached" if unattached else session["status"]
+            saved = not self.is_open(session) and session["status"] == "disconnected"
+            status = "Not attached" if unattached else "Saved" if saved else session["status"]
             latest = "Terminal open; check startup prompts or shared-server connection. Messages wait for attachment." if unattached else session["latest"]
             description = session.get("description", "")
             if description and not self.is_open(session):
@@ -612,6 +622,9 @@ class Window(QMainWindow):
                 title_detail = ("\nProvider title: " + provider_name
                                 if provider_name and provider_name != session["name"] else "")
                 item.setToolTip(f"{session['name']}{title_detail}\n{description}\n{session['cwd']}\n{key}" if column == 0 else (description + "\nLatest: " + session["latest"] if column == 3 and description else str(text)))
+                if column == 2 and saved:
+                    item.setToolTip("The provider reports this saved session as disconnected or not loaded. "
+                                    "No current VISOR terminal is reporting. Linked windows and background work still need inspection.")
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 if column == 2:
                     item.setForeground(QColor("#f2bc48" if text == "waiting" else "#00d2d8" if text == "working" else "#a9bccd"))
@@ -849,6 +862,10 @@ class Window(QMainWindow):
         self.update_selection_actions()
 
     def update_selection_actions(self):
+        if hasattr(self, "resume_sessions_button"):
+            count = len(selected_ids(self.sessions))
+            self.resume_sessions_button.setText(f"Resume selected ({count})…" if count else "Resume selected…")
+            self.resume_sessions_button.setEnabled(bool(count) and not getattr(self, "recovering_sessions", False))
         if hasattr(self, "inspect_message_button"):
             self.inspect_message_button.setEnabled(len(selected_ids(self.messages)) == 1)
         for table_name, button_name, label in (("sessions", "delete_sessions_button", "Delete selected sessions"),
@@ -1404,6 +1421,128 @@ class Window(QMainWindow):
 
     def delete_selected_sessions(self):
         self.delete_sessions(selected_ids(self.sessions))
+
+    @classmethod
+    def recovery_skip_reason(cls, session, snapshot):
+        if cls.is_open(session):
+            return "A current VISOR terminal is already open."
+        if session["id"] in snapshot.get("external_focus", {}):
+            return "An external window is linked; inspect or focus it."
+        warning = snapshot.get("provider_warnings", {}).get(session.get("provider"))
+        if warning:
+            return "Provider discovery needs inspection: " + str(warning)
+        state = session.get("status")
+        if state in ("working", "waiting", "idle"):
+            return f"The provider reports {state}; this session is already loaded."
+        if state != "disconnected":
+            return "Provider state is uncertain; inspect the session before resuming."
+        if any(session.get(field) for field in ("window_token", "helper_identity", "process_id")):
+            return "Previous terminal ownership needs inspection or reconciliation."
+        return ""
+
+    def resume_selected_sessions(self):
+        if getattr(self, "recovering_sessions", False):
+            return
+        keys = list(dict.fromkeys(selected_ids(self.sessions)))
+        if not keys:
+            return
+        counts = Counter(s["id"] for s in self.snapshot["sessions"])
+        chosen = {s["id"]: dict(s) for s in self.snapshot["sessions"]
+                  if s["id"] in keys and counts[s["id"]] == 1}
+        displayed_labels = self.session_labels()
+        labels = {key: displayed_labels.get(key, key) for key in keys}
+        question = QMessageBox(self)
+        question.setWindowTitle("Resume selected saved sessions")
+        question.setTextFormat(Qt.TextFormat.PlainText)
+        question.setText(f"Open terminals for saved sessions among these {len(keys)} selections?\n\n"
+                         + "\n".join(labels[key] for key in keys[:8])
+                         + (f"\n…and {len(keys) - 8} more" if len(keys) > 8 else ""))
+        question.setInformativeText(
+            "Confirm that the saved sessions are not running in other terminals. "
+            "VISOR refreshes provider state and skips loaded, linked or uncertain sessions. "
+            "Each launch keeps its existing ownership checks. Requests and background jobs are not replayed.")
+        question.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        question.setDefaultButton(QMessageBox.StandardButton.No)
+        question.setEscapeButton(QMessageBox.StandardButton.No)
+        if question.exec() != QMessageBox.StandardButton.Yes:
+            return
+        client = self.client
+        if client is None:
+            self.show_recovery_report(keys, labels, {key: ("Error", "Broker disconnected; no launch sent.") for key in keys})
+            return
+        self.recovering_sessions = True
+        self.update_selection_actions()
+        self.status.setText("Session recovery: refreshing provider state…")
+
+        def refresh():
+            client.call("refresh")
+            return client.call("snapshot")
+
+        def prepared(snapshot, error):
+            results, requests = {}, []
+            if error or self.client is not client:
+                reason = str(error) if error else "Broker connection changed; no launch sent."
+                results = {key: ("Error", reason) for key in keys}
+            else:
+                available = Counter(s["id"] for s in snapshot["sessions"])
+                current = {s["id"]: s for s in snapshot["sessions"]}
+                for key in keys:
+                    session = current.get(key)
+                    if key not in chosen or available[key] != 1:
+                        reason = "Session is no longer uniquely available; refresh and inspect it."
+                    elif any(session.get(field) != chosen[key].get(field) for field in ("provider", "native_id", "cwd")):
+                        reason = "Session details changed; inspect and select it again."
+                    else:
+                        reason = self.recovery_skip_reason(session, snapshot)
+                    if reason:
+                        results[key] = ("Skipped", reason)
+                    else:
+                        requests.append((key, {"session": key}))
+
+            def reported(outcomes):
+                for key, (ok, detail) in outcomes.items():
+                    results[key] = ("Launch requested", "Confirm the terminal opens; work completion is separate.") if ok else (
+                        "Error", detail + " Inspect before trying again; the launch outcome may be unconfirmed.")
+                self.recovering_sessions = False
+                self.update_selection_actions()
+                self.show_recovery_report(keys, labels, results)
+
+            if requests:
+                self.rpc_batch("resume", requests, "Session recovery", report=reported)
+            else:
+                reported({})
+
+        self.job(refresh, prepared)
+
+    def show_recovery_report(self, keys, labels, results):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Session recovery results")
+        dialog.resize(780, 350)
+        layout = QVBoxLayout(dialog)
+        counts = Counter(state for state, _detail in results.values())
+        summary = (f"Launch requests: {counts['Launch requested']} · Skipped: {counts['Skipped']} · "
+                   f"Errors: {counts['Error']}")
+        note = QLabel(summary + "\nSaved conversations are retained. This reports terminal launch requests, not completed work.")
+        note.setTextFormat(Qt.TextFormat.PlainText)
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        grid = table(["Session", "Result", "Detail"])
+        grid.setAccessibleName("Session recovery results")
+        grid.setRowCount(len(keys))
+        grid.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        grid.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        for row, key in enumerate(keys):
+            state, detail = results[key]
+            for column, text in enumerate((labels[key], state, detail)):
+                item = QTableWidgetItem(text)
+                item.setToolTip(key if column == 0 else text)
+                grid.setItem(row, column, item)
+        layout.addWidget(grid, 1)
+        controls = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        controls.rejected.connect(dialog.reject)
+        layout.addWidget(controls)
+        self.status.setText("Session recovery: " + summary)
+        dialog.exec()
 
     def delete_sessions(self, keys):
         # Capture IDs before confirmation: sorting/polling must not retarget DEL.
