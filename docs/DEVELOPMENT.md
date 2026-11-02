@@ -231,3 +231,51 @@ selection group passed46 of47 checks (one existing Windows-only skip) in6.180s,
 and Ruff passed. Actual Mac successor CI/package acceptance remains required;
 this Linux result is not reported as a reproduced or cleared native Mac failure.
 No exception catch, retry, test skip or Qt version change was added.
+
+## Quiet agent inbox source acceptance
+
+Run the focused existing custody, parallel delivery and channel checks with the
+new quiet-inbox boundary test (disposable state, synthetic loopback only):
+
+```sh
+PYTHONPATH=src:tests .venv/bin/python -m unittest test_quiet_coordination test_parallel_delivery test_claude test_core test_transport_recovery
+```
+
+The November2 source run passed94 of95 cases, with one existing Windows native
+process-identity skip, in36.059s. Its real scoped loopback send/receive/read-ACK
+completed in155.406ms and emitted zero native prompt calls/events. This measures
+that disposable broker, not an installed main thread or idle-worker wake. The final explicit-pull/old-channel guard then passed23 affected cases in6.957s;
+its loopback measured172.731ms. No live profile, provider, model, authentication
+or daemon was changed.
+
+Root installation acceptance remains separate: retain current source/profile
+preimages; verify the installed own-agent `ping` capability and exact approved
+pair; send one synthetic quiet request with a stable request ID; read it through
+the recipient's existing scoped client and explicitly acknowledge it; verify the
+same durable ID/body/state. Compare native event/message IDs before/after and
+report unrelated concurrent changes separately. Then verify a human operator or
+explicit attention message still uses normal visible delivery. Never infer hidden
+wake, reuse another session's credential, reset a held/UNKNOWN request, or restart
+a session just to attach tools. Source rollback leaves all queued/held/UNKNOWN
+messages and history intact; older code cannot interpret quiet pending requests,
+so preserve the upgraded reader until they are explicitly reconciled. An older
+broker would treat queued coordination as visible prompts: before a downgrade,
+root must use existing approved communication controls to hold pending agent
+traffic and retain exact messages/UNKNOWN outcomes; do not rewrite their kind.
+
+Current-thread fallback requires an existing genuine own-agent credential, not
+the Prism activity credential. The existing installed console can run
+`visor-console --mcp --credential "$VISOR_AGENT_CREDENTIAL"` over stdio and use
+normal `tools/call` requests for `send`, `receive` and `acknowledge`. No provider
+turn, global MCP attachment, credential generation or daemon is needed. A direct
+scoped `Client` must first verify `ping.capabilities` includes
+`quiet_agent_inbox`, then explicitly call `receive(prompt_only=False)` for quiet
+messages. An old unqualified broker or unavailable own grant is a hold.
+
+Until adoption, `php artisan lemma:coordinate send --to=SESSION_UUID
+--message-file=FILE --json` remains the existing quiet durable fallback. Status
+only peeks at the inbox; a read receipt uses registered `lemma_message_read`
+(`CliLocalMcpServices` to `CliLemmaMessages::read`) under the real recipient
+session. Neither route wakes an idle native thread. Reserve visible native
+relay for genuine material attention and approvals; do not replay every handoff
+into a native prompt or label a queued request running.

@@ -29,7 +29,8 @@ from .store import PolicyError
 _ANY_CACHE = object()
 
 ACTIVITY_TABLES = {"activity_boards", "activity_revisions", "activity_assets",
-                   "activity_requests", "activity_replies", "activity_events", "activity_members", "activity_deleted", "activity_lifecycle"}
+                   "activity_requests", "activity_replies", "activity_events", "activity_members", "activity_deleted", "activity_lifecycle",
+                   "activity_publishers"}
 
 def _stamp():
     return datetime.now(UTC).isoformat()
@@ -84,6 +85,11 @@ class ActivityService:
                 CREATE TABLE IF NOT EXISTS activity_members(
                     board_id TEXT NOT NULL REFERENCES activity_boards(id), session_id TEXT NOT NULL,
                     PRIMARY KEY(board_id,session_id));
+                CREATE TABLE IF NOT EXISTS activity_publishers(
+                    board_id TEXT NOT NULL REFERENCES activity_boards(id), contributor TEXT NOT NULL,
+                    publisher TEXT NOT NULL, card_ids TEXT NOT NULL, revision INTEGER NOT NULL,
+                    enabled INTEGER NOT NULL, updated TEXT NOT NULL,
+                    PRIMARY KEY(board_id,contributor,publisher));
                 CREATE TABLE IF NOT EXISTS activity_deleted(
                     id TEXT PRIMARY KEY, owner TEXT NOT NULL, revision INTEGER NOT NULL, deleted_at TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS activity_lifecycle(
@@ -193,6 +199,126 @@ class ActivityService:
     def _record_request(db, actor, request_id, digest, result):
         db.execute("INSERT INTO activity_requests VALUES(?,?,?,?,?)",
                    (actor, request_id, digest, _json(result), _stamp()))
+
+    @staticmethod
+    def _publisher_value(row, board_revision):
+        return {"id": row["board_id"], "contributor": row["contributor"], "publisher": row["publisher"],
+                "card_ids": json.loads(row["card_ids"]), "grant_revision": row["revision"],
+                "enabled": bool(row["enabled"]), "board_revision": board_revision,
+                "scope": "publish_only_input_stays_with_contributor"}
+
+    def publisher_get(self, actor, id, contributor, publisher):
+        self._actor(actor)
+        if not all(isinstance(value, str) and value for value in (contributor, publisher)):
+            raise PolicyError("Exact contributor and publisher identities are required")
+        if actor is not None and actor not in {contributor, publisher}:
+            raise PolicyError("Only the contributor, publisher or operator may inspect this grant")
+        with self.store.connect() as db:
+            db.execute("BEGIN")
+            board = self._board(db, actor, id)
+            row = db.execute("SELECT * FROM activity_publishers WHERE board_id=? AND contributor=? AND publisher=?",
+                             (id, contributor, publisher)).fetchone()
+            if row is None:
+                return {"id": id, "contributor": contributor, "publisher": publisher, "card_ids": [],
+                        "grant_revision": 0, "enabled": False, "board_revision": board["revision"],
+                        "scope": "publish_only_input_stays_with_contributor"}
+            return self._publisher_value(row, board["revision"])
+
+    def publisher_set(self, actor, id, contributor, publisher, expected_revision,
+                      expected_grant_revision, request_id, card_ids=None, *, revoke=False):
+        self._actor(actor)
+        if not all(isinstance(value, str) and value for value in (contributor, publisher)):
+            raise PolicyError("Exact contributor and publisher identities are required")
+        if actor is not None and actor != contributor:
+            raise PolicyError("Only the card contributor or operator may delegate publication")
+        if contributor == publisher:
+            raise PolicyError("A contributor already publishes its own cards")
+        if (type(expected_revision) is not int or expected_revision < 1
+                or type(expected_grant_revision) is not int or expected_grant_revision < 0):
+            raise PolicyError("Exact board and publisher grant revisions are required")
+        if not revoke and (not isinstance(card_ids, list) or not card_ids
+                           or any(not isinstance(value, str) for value in card_ids)
+                           or len(set(card_ids)) != len(card_ids)):
+            raise PolicyError("Publisher grant requires distinct exact card IDs")
+        if not revoke:
+            for identity in card_ids:
+                _identifier(identity, "card id")
+        requester = "operator" if actor is None else actor
+        payload = {"action": "publisher_revoke" if revoke else "publisher_grant", "id": id,
+                   "contributor": contributor, "publisher": publisher, "card_ids": card_ids,
+                   "expected_revision": expected_revision, "expected_grant_revision": expected_grant_revision}
+        with self.store.connect(True) as db:
+            board = self._board(db, actor, id)
+            digest, previous = self._request(db, requester, request_id, payload)
+            if previous is not None:
+                return previous
+            if board["revision"] != expected_revision:
+                raise PolicyError("Activity revision conflict; read the current board before delegation")
+            members = self._members(db, id)
+            if contributor not in members or publisher not in members or not all(
+                    db.execute("SELECT 1 FROM sessions WHERE id=?", (identity,)).fetchone()
+                    for identity in (contributor, publisher)):
+                raise PolicyError("Contributor and publisher must be existing permitted board members")
+            # Operators do not bypass the board's existing direct-pair policy.
+            if not self._allowed(db, publisher, board):
+                raise PolicyError("Publisher is not currently permitted on this board")
+            row = db.execute("SELECT * FROM activity_publishers WHERE board_id=? AND contributor=? AND publisher=?",
+                             (id, contributor, publisher)).fetchone()
+            revision = row["revision"] if row else 0
+            if revision != expected_grant_revision:
+                raise PolicyError("Publisher grant revision conflict; read the current grant")
+            if revoke:
+                if row is None or not row["enabled"]:
+                    raise PolicyError("No active publisher grant to revoke")
+                card_ids = json.loads(row["card_ids"])
+            else:
+                document = json.loads(db.execute("SELECT document FROM activity_revisions WHERE board_id=? AND revision=?",
+                                                 (id, expected_revision)).fetchone()[0])
+                cards = {card["id"]: card for card in document["cards"]}
+                if any(identity not in cards or cards[identity]["contributor"] != contributor for identity in card_ids):
+                    raise PolicyError("Publisher scope must contain only this contributor's current exact cards")
+            db.execute("""INSERT INTO activity_publishers VALUES(?,?,?,?,?,?,?)
+                          ON CONFLICT(board_id,contributor,publisher) DO UPDATE SET
+                          card_ids=excluded.card_ids,revision=excluded.revision,enabled=excluded.enabled,updated=excluded.updated""",
+                       (id, contributor, publisher, _json(card_ids), revision + 1, int(not revoke), _stamp()))
+            row = db.execute("SELECT * FROM activity_publishers WHERE board_id=? AND contributor=? AND publisher=?",
+                             (id, contributor, publisher)).fetchone()
+            result = self._publisher_value(row, board["revision"]) | {"request_id": request_id}
+            self._record_request(db, requester, request_id, digest, result)
+            return result
+
+    def _assert_publish_permissions(self, db, actor, old, candidate, publisher_grants=None):
+        if publisher_grants is not None and (not isinstance(publisher_grants, dict) or not publisher_grants
+                                             or any(not isinstance(key, str) or type(value) is not int or value < 1
+                                                    for key, value in publisher_grants.items())):
+            raise PolicyError("Publisher grants require exact contributor and grant revisions")
+        previous = {card["id"]: card for card in old["cards"]} if old else {}
+        incoming = {card["id"]: {key: value for key, value in card.items() if key != "contributor"}
+                    for card in candidate["cards"]}
+        grants = {}
+        for contributor, revision in (publisher_grants or {}).items():
+            row = db.execute("SELECT * FROM activity_publishers WHERE board_id=? AND contributor=? AND publisher=?",
+                             (candidate["id"], contributor, actor)).fetchone()
+            if (row is None or not row["enabled"] or row["revision"] != revision
+                    or contributor not in self._members(db, candidate["id"])
+                    or not db.execute("SELECT 1 FROM sessions WHERE id=?", (contributor,)).fetchone()):
+                raise PolicyError("Publisher grant was revoked or changed")
+            grants[contributor] = set(json.loads(row["card_ids"]))
+        if publisher_grants:
+            # Delegated publication changes content only, never board/card identity,
+            # ownership, membership, metadata, or operator delivery destinations.
+            if old is None or list(previous) != list(incoming):
+                raise PolicyError("Delegated publishers must preserve existing card IDs and order")
+            def metadata(value):
+                return {key: item for key, item in value.items() if key not in {
+                    "cards", "revision", "updated_at", "last_editor", "contributors", "contributor_labels", "session_link"}}
+            if _json(metadata(old)) != _json(metadata(candidate)):
+                raise PolicyError("Delegated publishers cannot change board metadata")
+        for identity, card in previous.items():
+            comparable = {key: value for key, value in card.items() if key != "contributor"}
+            if (card["contributor"] != actor and _json(incoming.get(identity)) != _json(comparable)
+                    and (identity not in incoming or identity not in grants.get(card["contributor"], set()))):
+                raise PolicyError("Only a card's contributor or exact delegated publisher may change it")
 
     def _owner_dir(self, actor):
         current = self.root
@@ -411,7 +537,7 @@ class ActivityService:
                        (actor, relative, digest, len(content), _stamp(), content))
         return {"path": relative, "sha256": digest, "bytes": len(content)}
 
-    def publish(self, actor, document, request_id, expected_revision=0):
+    def publish(self, actor, document, request_id, expected_revision=0, publisher_grants=None):
         session = self._actor(actor)
         if session is None:
             raise PolicyError("Publish requires an authenticated session owner")
@@ -423,6 +549,8 @@ class ActivityService:
             raise PolicyError("Activity document must be an object")
         identity = _identifier(candidate.get("id"), "board id")
         payload = {"action": "publish", "document": document, "expected_revision": expected_revision}
+        if publisher_grants is not None:
+            payload["publisher_grants"] = publisher_grants
         digest = _hash(_json(payload).encode("utf-8"))
         with self.store.connect() as db:
             db.execute("BEGIN")
@@ -447,12 +575,8 @@ class ActivityService:
         if expected_revision != revision or candidate["revision"] != revision + 1:
             raise PolicyError("Activity revision conflict; read the current document before updating")
         previous_cards = {card["id"]: card for card in old["cards"]} if old else {}
-        incoming = {card["id"]: card for card in candidate["cards"]}
-        for key, card in previous_cards.items():
-            if card["contributor"] != actor:
-                comparable = {k: v for k, v in card.items() if k != "contributor"}
-                if incoming.get(key) != comparable:
-                    raise PolicyError("Only a card's contributor may change or remove it")
+        with self.store.connect() as db:
+            self._assert_publish_permissions(db, actor, old, candidate, publisher_grants)
         if old:
             candidate["session_link"] = old["session_link"]
         for card in candidate["cards"]:
@@ -479,6 +603,7 @@ class ActivityService:
                     raise PolicyError("Activity revision conflict; read the current document before updating")
                 if self._policy_value(self.store.setting(db, "activity_policy", {})) != policy:
                     raise PolicyError("Activity policy changed during validation; retry the publish")
+                self._assert_publish_permissions(db, actor, old, candidate, publisher_grants)
                 self._check_asset_identities(db, identities)
                 created = candidate["updated_at"]
                 if current:
@@ -550,7 +675,7 @@ class ActivityService:
             result["path"] = str(path)
         return result
 
-    def update_card(self, actor, id, card_id, changes, expected_revision, request_id):
+    def update_card(self, actor, id, card_id, changes, expected_revision, request_id, publisher_grants=None):
         """Merge a card against an immutable base, reusing guarded publish receipts."""
         if self._actor(actor) is None:
             raise PolicyError("Card updates require an authenticated session owner")
@@ -562,6 +687,8 @@ class ActivityService:
             raise PolicyError("Card changes must be a nonempty object and cannot change id, kind or contributor")
         payload = {"action": "update_card", "id": id, "card_id": card_id, "changes": changes,
                    "expected_revision": expected_revision}
+        if publisher_grants is not None:
+            payload["publisher_grants"] = publisher_grants
         if len(_json(payload).encode("utf-8")) > self.policy().max_document_bytes:
             raise PolicyError("Card update exceeds the document byte limit")
         with self.store.connect() as db:
@@ -582,7 +709,7 @@ class ActivityService:
         # This receipt also recovers a crash after publish but before the outer
         # request was recorded. A retry reconstructs the identical base document.
         internal_request = "card-update-" + _hash(request_id.encode("utf-8"))
-        result = self.publish(actor, document, internal_request, expected_revision)
+        result = self.publish(actor, document, internal_request, expected_revision, publisher_grants)
         accepted = {key: value for key, value in result.items() if key != "projection"}
         accepted["request_id"] = request_id
         with self.store.connect(True) as db:
@@ -882,7 +1009,7 @@ class ActivityService:
             if board["revision"] != expected_revision:
                 raise PolicyError(f"Activity delete revision conflict; current revision is {board['revision']}; review and confirm again")
             db.execute("INSERT INTO activity_deleted VALUES(?,?,?,?)", (id, board["owner"], board["revision"], _stamp()))
-            for table in ("activity_replies", "activity_events", "activity_revisions", "activity_members", "activity_lifecycle"):
+            for table in ("activity_replies", "activity_events", "activity_revisions", "activity_members", "activity_lifecycle", "activity_publishers"):
                 db.execute(f"DELETE FROM {table} WHERE board_id=?", (id,))
             db.execute("DELETE FROM activity_boards WHERE id=?", (id,))
             # Retain request identities/digests, but remove reply bodies and other

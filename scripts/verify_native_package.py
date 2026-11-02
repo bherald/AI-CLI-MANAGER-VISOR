@@ -19,6 +19,15 @@ from visor.paths import data_dir, write_private
 from visor.process import hidden_options
 
 
+def package_resource(resources, name):
+    if not isinstance(name, str):
+        raise TypeError("Packaged resource name must be text")
+    path = resources / name
+    if not path.resolve().is_relative_to(resources.resolve()) or not path.is_file():
+        raise RuntimeError("Declared package resource is missing or escaped its directory")
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", type=Path)
@@ -61,6 +70,28 @@ def main():
     notice_root = resources / "licenses" / ("upstream-qt-" + qt_version)
     verify_qt_notices(notice_root, qt_version)
     inventory = json.loads((resources / "native-binaries.json").read_text(encoding="utf-8"))
+    for snapshot in manifest.get("additional_notices", []):
+        prefix = "licenses/upstream-" + snapshot["component"] + "-" + snapshot["version"] + "/"
+        for entry in snapshot["files"]:
+            path = package_resource(resources, prefix + entry["path"])
+            if hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
+                raise RuntimeError("Packaged reviewed third-party notice changed")
+    if ("readline" in manifest.get("excluded_python_modules", [])
+            and any(Path(entry["path"]).name.startswith(("libreadline.", "readline.")) for entry in inventory["binaries"])):
+        raise RuntimeError("Excluded Readline remains in the extracted package")
+    if manifest.get("dependency_sources"):
+        sources = json.loads(package_resource(resources, manifest["dependency_sources"]).read_text(encoding="utf-8"))
+        if sources["qt_version"] != qt_version or sources["repositories"] != manifest["upstream_qt_notices"]["repositories"]:
+            raise RuntimeError("Packaged dependency sources differ from the pinned Qt notice snapshot")
+        package_resource(resources, sources["replacement_instructions"])
+        system = json.loads(package_resource(resources, manifest["system_notices"]).read_text(encoding="utf-8"))
+        for package in system.get("packages", []):
+            for notice in [package["copyright"], *package["referenced_licenses"]]:
+                path = resources / "licenses/system" / notice["path"]
+                if not path.resolve().is_relative_to((resources / "licenses/system").resolve()) or not path.is_file():
+                    raise RuntimeError("Packaged system notice is missing or escaped its directory")
+                if hashlib.sha256(path.read_bytes()).hexdigest() != notice["sha256"]:
+                    raise RuntimeError("Packaged system notice hash differs from the build receipt")
     binary_root = app if sys.platform == "darwin" else resources
     if not inventory["binaries"]:
         raise RuntimeError("Native binary inventory is empty")

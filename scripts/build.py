@@ -29,6 +29,8 @@ if clean_env != dict(os.environ):
     os.execve(sys.executable, [sys.executable, *sys.argv], clean_env)
 
 sys.path.insert(0, str(root / "src"))
+from native_notices import collect_linux_notices, copy_reviewed_snapshot
+
 from visor.build_storage import check_space
 from visor.bundles import create_archive
 from visor.notices import copy_qt_notices, native_inventory
@@ -63,6 +65,8 @@ for name, windowed in (("visor", True), ("visor-console", False)):
             "--workpath", str(root / "build" / name), "--specpath", str(root / "build"),
             "--hidden-import", "visor.ui", "--hidden-import", "PySide6.QtWidgets",
             "--hidden-import", "PySide6.QtCore", "--hidden-import", "PySide6.QtGui"]
+    # Only optional stdlib/websockets REPLs import GNU Readline; VISOR uses neither.
+    args += ["--exclude-module", "readline"]
     args += ["--add-data", str(root / "src/visor/web") + os.pathsep + "visor/web"]
     if windowed and sys.platform in ("win32", "darwin"):
         args.append("--windowed")
@@ -122,14 +126,38 @@ if qVersion() != qt_version:
     raise SystemExit("Qt runtime and PySide versions differ; match upstream notices before distributing this build")
 qt_notices = copy_qt_notices(root / "third_party" / ("qt-" + qt_version),
                             licenses / ("upstream-qt-" + qt_version), qt_version)
+additional_notices = [copy_reviewed_snapshot(path.parent, licenses)
+                      for path in sorted((root / "third_party").glob("*/manifest.json"))
+                      if json.loads(path.read_text(encoding="utf-8")).get("component")]
 binary_root = app if sys.platform == "darwin" else destination
-(resources / "native-binaries.json").write_text(json.dumps({"binaries": native_inventory(binary_root),
+native = native_inventory(binary_root)
+if any(Path(item["path"]).name.startswith(("libreadline.", "readline.")) for item in native):
+    raise SystemExit("Excluded interactive Readline remains in the native payload; inspect the build graph")
+system_notices = {"scope": "Platform-specific non-wheel native notices require the actual platform inventory"}
+if sys.platform == "linux" and shutil.which("dpkg-query"):
+    system_notices = collect_linux_notices(
+        [root / "build" / name / name / "Analysis-00.toc" for name in ("visor", "visor-console")],
+        native, licenses / "system", distribution=platform.freedesktop_os_release())
+(resources / "native-system-notices.json").write_text(json.dumps(system_notices, indent=2), encoding="utf-8")
+sources = {"qt_version": qt_version, "repositories": qt_notices["repositories"],
+           "archives": [{"component": name, "version": qt_version, "commit": item["commit"],
+                         "url": f"https://github.com/{item['repository']}/archive/{item['commit']}.tar.gz"}
+                        for name, item in qt_notices["repositories"].items()],
+           "python": {"version": platform.python_version(),
+                      "source": f"https://www.python.org/ftp/python/{platform.python_version()}/Python-{platform.python_version()}.tgz"},
+           "system_sources": "native-system-notices.json", "replacement_instructions": "docs/DEPENDENCY_SOURCES.md"}
+sources["additional_components"] = additional_notices
+(resources / "dependency-sources.json").write_text(json.dumps(sources, indent=2), encoding="utf-8")
+(resources / "native-binaries.json").write_text(json.dumps({"binaries": native,
     "hash_scope": "before code signing" if sys.platform == "darwin" else "packaged files",
     "review_status": "Inventory only; platform/native dependency redistribution review remains required"}, indent=2), encoding="utf-8")
 manifest = {"application": "VISOR", "version": "1.5.0", "release_status": "unsigned beta",
             "os": platform.system(), "architecture": platform.machine(), "python": platform.python_version(),
             "dependencies": sorted(inventory, key=lambda item: item["name"].lower()),
             "upstream_qt_notices": qt_notices, "native_inventory": "native-binaries.json",
+            "dependency_sources": "dependency-sources.json", "system_notices": "native-system-notices.json",
+            "excluded_python_modules": ["readline"],
+            "additional_notices": additional_notices,
             "dependency_review_complete": False}
 manifest["inventory_scope"] = "Installed build environment; includes tooling that may not be bundled"
 (resources / "build-manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

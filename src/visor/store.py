@@ -309,8 +309,10 @@ class Store:
         body = body.strip()
         if not body or len(body) > 16000 or not dedupe or len(dedupe) > 128:
             raise PolicyError("Message must contain 1–16000 characters and a request ID")
-        if kind not in ("message", "wrap_up") or (kind == "wrap_up" and not operator):
-            raise PolicyError("Wrap-up is an operator action")
+        if kind not in (None, "message", "wrap_up", "coordination") or (kind == "wrap_up" and not operator):
+            raise PolicyError("Wrap-up is an operator action; unknown message kind")
+        if operator and kind in (None, "coordination"):
+            raise PolicyError("Human operator messages require prompt delivery")
         origin = "operator" if operator else "agent"
         sender = "operator" if operator else sender
         now = time.time()
@@ -321,9 +323,12 @@ class Store:
             if old:
                 if old["state"] == "deleted":
                     raise PolicyError("Message was deleted; use a new request ID")
-                if (old["recipient"], old["body"], old["kind"]) != (recipient, body, kind):
+                # An unspecified agent delivery mode preserves an identical legacy
+                # request's retained transport instead of creating/reclassifying it.
+                if (old["recipient"], old["body"], old["kind"]) != (recipient, body, old["kind"] if kind is None else kind):
                     raise PolicyError("Request ID already used for a different message")
                 return dict(old)
+            kind = "coordination" if kind is None else kind
             if not operator:
                 a, b = sorted((sender, recipient))
                 if not db.execute("SELECT 1 FROM pairs WHERE a=? AND b=?", (a, b)).fetchone():
@@ -441,20 +446,22 @@ class Store:
         """Background reconciliation must not use the bounded UI history window."""
         with self.connect() as db:
             return [dict(row) for row in db.execute("""SELECT * FROM messages WHERE recipient=?
-                AND state IN ('delivered','delivery_unknown','acknowledged') ORDER BY created""",
+                AND kind!='coordination' AND state IN ('delivered','delivery_unknown','acknowledged') ORDER BY created""",
                                                     (recipient,))]
 
-    def queued_recipients(self):
+    def queued_recipients(self, *, prompt_only=False):
         """Delivery admission uses the full queue, never the bounded UI history."""
         with self.connect() as db:
             return [row[0] for row in db.execute("""SELECT recipient FROM messages
-                WHERE state='queued' GROUP BY recipient ORDER BY MIN(created),recipient""")]
+                WHERE state='queued' AND (?=0 OR kind!='coordination')
+                GROUP BY recipient ORDER BY MIN(created),recipient""", (prompt_only,))]
 
-    def claim(self, recipient=None):
+    def claim(self, recipient=None, *, prompt_only=False):
         """Claim under current policy; an in-flight claim cannot be retracted by a toggle."""
         with self.connect(True) as db:
-            rows = db.execute("SELECT * FROM messages WHERE state='queued' AND (? IS NULL OR recipient=?) ORDER BY created",
-                              (recipient, recipient)).fetchall()
+            rows = db.execute("""SELECT * FROM messages WHERE state='queued' AND (? IS NULL OR recipient=?)
+                AND (?=0 OR kind!='coordination') ORDER BY created""",
+                              (recipient, recipient, prompt_only)).fetchall()
             for row in rows:
                 if recipient and row["recipient"] != recipient:
                     continue

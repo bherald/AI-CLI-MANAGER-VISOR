@@ -64,6 +64,36 @@ stays sending until the transport reports writing its response; unconfirmed atte
 to delivery_unknown. An acknowledgment may arrive first and is never downgraded by a late
 transport receipt. Pending inboxes are bounded to 500 messages per recipient.
 
+Routine agent requests without a delivery option use `messages.kind=coordination`
+in the existing durable queue. Explicit `delivery=prompt` retains kind `message`;
+operator messages and wrap-up remain visible. No table, service or background
+consumer is added. Both `queued_recipients(prompt_only=True)` and the final
+`claim(..., prompt_only=True)` exclude coordination before native delivery. Quiet
+backlogs therefore neither fill the parallel send pool nor block later operator
+attention. Channel polling likewise requests prompt-only claims. The updated MCP receive tool explicitly calls `receive(prompt_only=False)` and
+reads the full permitted inbox and uses existing transport/read/
+completion receipts; quiet receipts do not trigger native transcript scans.
+
+Unspecified identical retries preserve an existing request's retained kind,
+including legacy visible requests. Broker receive without an explicit
+`prompt_only=False` remains prompt-only, so an already-running old channel
+consumer cannot accidentally make new quiet messages visible. An old cached MCP
+receive implementation therefore cannot read quiet messages; use the current
+scoped stdio client without restarting the native thread. Explicit transport changes with the same
+request ID refuse. The old body, approval/pair rules, holds, tombstones, UNKNOWN
+custody and per-recipient serialization remain. Agent-scoped `ping` advertises
+`quiet_agent_inbox`, `default_agent_delivery=inbox` and `idle_wake=false`, without
+operator capabilities. Clients must verify that contract before relying on it.
+The existing scoped MCP stdio client can use these tools without reattaching a
+running thread or changing global MCP/authentication. It requires that thread's
+existing genuine agent credential; an activity-only grant is insufficient.
+
+Codex queue carries ordinary `UserInput` and a client user-message ID; there is no
+silent-wake field. The existing terminal helper reports liveness only. Quiet
+inbox delivery cannot wake idle Codex/Claude workers. The worker must poll at a
+safe task boundary, or a genuinely material explicit prompt must wake it visibly.
+A queue receipt, read ACK or helper heartbeat is never reported as running work.
+
 For opted-in Claude channels, initialize advertises `experimental["claude/channel"]` and
 does not advertise permission relay. After the client's initialized notification, a scoped
 worker claims permitted messages and emits `notifications/claude/channel`. Response and

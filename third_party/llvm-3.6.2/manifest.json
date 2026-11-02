@@ -1,0 +1,31 @@
+{
+  "component": "LLVM",
+  "version": "3.6.2",
+  "repository": "llvm/llvm-project",
+  "tag": "llvmorg-3.6.2",
+  "commit": "ee46064b83e7acd5a215ea5bb1c9708d75de6164",
+  "source_archive": "https://github.com/llvm/llvm-project/archive/ee46064b83e7acd5a215ea5bb1c9708d75de6164.tar.gz",
+  "scope": "LLVM release license and the release-listed runtime/support notices; includes the original MD5 source to retain its public-domain attribution. Build/test-tool licenses are not an assertion those tools are shipped. Applies where this LLVM version is present.",
+  "files": [
+    {
+      "path": "LICENSE.TXT",
+      "sha256": "e3bc36440fc927c62d5cc24efeefe225a14d4e34ffeb0c92e430625cce9ee444",
+      "source": "https://raw.githubusercontent.com/llvm/llvm-project/ee46064b83e7acd5a215ea5bb1c9708d75de6164/llvm/LICENSE.TXT"
+    },
+    {
+      "path": "lib/Support/COPYRIGHT.regex",
+      "sha256": "0424e57d4303164dc59a8509c20dae0518b853692e5c2b0e98b11816fdbc97c7",
+      "source": "https://raw.githubusercontent.com/llvm/llvm-project/ee46064b83e7acd5a215ea5bb1c9708d75de6164/llvm/lib/Support/COPYRIGHT.regex"
+    },
+    {
+      "path": "lib/Target/ARM/LICENSE.TXT",
+      "sha256": "28cbd5f6dac844fc3d94e879dba83c3ca87328ece8e0d388284f8cec6a042a97",
+      "source": "https://raw.githubusercontent.com/llvm/llvm-project/ee46064b83e7acd5a215ea5bb1c9708d75de6164/llvm/lib/Target/ARM/LICENSE.TXT"
+    },
+    {
+      "path": "lib/Support/MD5.cpp",
+      "sha256": "19edb938505f839ba5d2d96c26d5db454542cc9d22d277652f5085c62d0ac792",
+      "source": "https://raw.githubusercontent.com/llvm/llvm-project/ee46064b83e7acd5a215ea5bb1c9708d75de6164/llvm/lib/Support/MD5.cpp"
+    }
+  ]
+}

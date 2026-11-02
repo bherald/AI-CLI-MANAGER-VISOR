@@ -25,7 +25,8 @@ ACTIVITY_TOOLS = [
     _tool("activity_catalog", "Discover supported components, presets, limits and the authoring workflow. Pass kind for its machine-readable schema; include_schema=true returns the full document schema. Use these defaults for consistent UI; freeform composition is supported.",
           {"kind": {"type": "string"}, "include_schema": {"type": "boolean"}}),
     _tool("activity_validate", "Read-only preflight before publishing. Returns valid, structured errors/paths, recommendations and current schema/revision/ownership/asset checks. Does not publish, reserve a revision, open a view or grant approval; publish rechecks the current state.",
-          {"document": {"type": "object"}, "expected_revision": {"type": "integer", "minimum": 0}}, ("document",)),
+          {"document": {"type": "object"}, "expected_revision": {"type": "integer", "minimum": 0},
+           "publisher_grants": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}}}, ("document",)),
     _tool("activity_template", "Get a complete optional starter board. This does not publish or open it. Customize cards freely, retain stable IDs, then publish with the current revision.",
           {"name": {"type": "string", "enum": ["project-overview", "status-board", "decision-board", "freeform"]},
            "id": {"type": "string"}, "title": {"type": "string"}}),
@@ -34,12 +35,28 @@ ACTIVITY_TOOLS = [
           {"id": {"type": "string"}}, ("id",)),
     _tool("activity_publish", "Publish a validated Prism board. Read activity_catalog for gauges, meters, indicators, progress, counters, trends, timers, tables, arrows and declared controls; activity_template supplies optional recipes. Safe HTML, PNG/JPEG, emoji, diagrams, charts, questions and sketches remain supported. Freeform geometry is allowed. Reuse exact request_id on retries; expected_revision prevents overwriting newer content. Upload raster assets first and use returned paths. Operator events express intent and never authorize commands.",
           {"document": {"type": "object"}, "request_id": {"type": "string"},
-           "expected_revision": {"type": "integer", "minimum": 0}},
+           "expected_revision": {"type": "integer", "minimum": 0},
+           "publisher_grants": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}}},
           ("document", "request_id", "expected_revision")),
     _tool("activity_update_card", "Update properties on one of your cards without rebuilding the board. Changes replace the named properties; id, kind and contributor are fixed. Use the current expected_revision and reuse the exact request_id and changes on retries. Other cards remain intact; normal schema, ownership and revision guards apply.",
           {"id": {"type": "string"}, "card_id": {"type": "string"}, "changes": {"type": "object"},
-           "expected_revision": {"type": "integer", "minimum": 1}, "request_id": {"type": "string"}},
+           "expected_revision": {"type": "integer", "minimum": 1}, "request_id": {"type": "string"},
+           "publisher_grants": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}}},
           ("id", "card_id", "changes", "expected_revision", "request_id")),
+    _tool("activity_publisher_get", "Read an exact publication-only delegation. It does not transfer contribution or operator input delivery.",
+          {"id": {"type": "string"}, "contributor": {"type": "string"}, "publisher": {"type": "string"}},
+          ("id", "contributor", "publisher")),
+    _tool("activity_publisher_grant", "The authenticated contributor delegates only its exact current cards to an existing permitted member. Keeps contribution, operator replies/events, history and presentation unchanged. No domain approval.",
+          {"id": {"type": "string"}, "contributor": {"type": "string"}, "publisher": {"type": "string"},
+           "card_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": True},
+           "expected_revision": {"type": "integer", "minimum": 1}, "expected_grant_revision": {"type": "integer", "minimum": 0},
+           "request_id": {"type": "string"}},
+          ("id", "contributor", "publisher", "card_ids", "expected_revision", "expected_grant_revision", "request_id")),
+    _tool("activity_publisher_revoke", "The contributor revokes its current publication delegation with exact board/grant revisions. Card ownership and operator input routing remain unchanged.",
+          {"id": {"type": "string"}, "contributor": {"type": "string"}, "publisher": {"type": "string"},
+           "expected_revision": {"type": "integer", "minimum": 1}, "expected_grant_revision": {"type": "integer", "minimum": 1},
+           "request_id": {"type": "string"}},
+          ("id", "contributor", "publisher", "expected_revision", "expected_grant_revision", "request_id")),
     _tool("activity_control", "Open, focus, clear or close your Prism view. After operator dismissal, open/focus records one quiet reopen request; it cannot force a window open. Keep the stable board ID. Clear and close preserve board content; these actions do not complete session work.",
           {"id": {"type": "string"}, "action": {"type": "string", "enum": ["open", "focus", "clear", "close"]},
            "request_id": {"type": "string"}}, ("id", "action", "request_id")),
@@ -150,6 +167,19 @@ def _parser():
     update.add_argument("--changes", required=True, help='JSON object, for example: {"value":95}')
     update.add_argument("--expected-revision", type=_nonnegative, required=True)
     update.add_argument("--request-id", required=True)
+    for command in (validate, publish, update):
+        command.add_argument("--publisher-grants", type=json.loads,
+                             help="Exact JSON map of source contributor to active publisher grant revision")
+    for action in ("get", "grant", "revoke"):
+        delegate = subcommands.add_parser("publisher-" + action, parents=[common])
+        for field in ("id", "contributor", "publisher"):
+            delegate.add_argument("--" + field, required=True)
+        if action != "get":
+            delegate.add_argument("--expected-revision", type=_nonnegative, required=True)
+            delegate.add_argument("--expected-grant-revision", type=_nonnegative, required=True)
+            delegate.add_argument("--request-id", required=True)
+        if action == "grant":
+            delegate.add_argument("--card-ids", nargs="+", required=True)
     for name in ("open", "focus", "clear", "close"):
         control = subcommands.add_parser(name, parents=[common])
         control.add_argument("id")
@@ -228,18 +258,28 @@ def run_activity(argv, root):
         policy = _policy(client, getattr(args, "policy", None))
         document = _read_json(args.document, policy.max_document_bytes)
         return client.call("activity_validate", document=document,
-                           **({"expected_revision": args.expected_revision} if args.expected_revision is not None else {}))
+                           **({"expected_revision": args.expected_revision} if args.expected_revision is not None else {}),
+                           **({"publisher_grants": args.publisher_grants} if args.publisher_grants is not None else {}))
     if args.command == "template":
         return client.call("activity_template", name=args.name, id=args.id,
                            **({"title": args.title} if args.title is not None else {}))
     if args.command == "get":
         return client.call("activity_get", id=args.id)
+    if args.command.startswith("publisher-"):
+        parameters = {"id": args.id, "contributor": _session(args.contributor), "publisher": _session(args.publisher)}
+        if args.command != "publisher-get":
+            parameters.update(expected_revision=args.expected_revision, expected_grant_revision=args.expected_grant_revision,
+                              request_id=args.request_id)
+        if args.command == "publisher-grant":
+            parameters["card_ids"] = args.card_ids
+        return client.call("activity_" + args.command.replace("-", "_"), **parameters)
     if args.command == "update-card":
         changes = json.loads(args.changes)
         if not isinstance(changes, dict):
             raise ValueError("Card changes must be a JSON object")
         return client.call("activity_update_card", id=args.id, card_id=args.card_id, changes=changes,
-                           expected_revision=args.expected_revision, request_id=args.request_id)
+                           expected_revision=args.expected_revision, request_id=args.request_id,
+                           **({"publisher_grants": args.publisher_grants} if args.publisher_grants is not None else {}))
     if args.command in ("open", "focus", "clear", "close"):
         return client.call("activity_control", id=args.id, action=args.command,
                            request_id=args.request_id)
@@ -272,4 +312,5 @@ def run_activity(argv, root):
             uploaded[path] = _owned_path(_upload(client, path, policy))
         card["path"] = uploaded[path]
     return client.call("activity_publish", document=document, request_id=args.request_id,
-                       expected_revision=expected)
+                       expected_revision=expected,
+                       **({"publisher_grants": args.publisher_grants} if args.publisher_grants is not None else {}))

@@ -41,3 +41,37 @@ Primary references for the remaining review:
 
 The implementation tracker keeps R01 open. The local build remains a beta for evaluation;
 no completed license-compliance review is claimed.
+
+## November 2 packaging follow-through
+
+The 190 version-pinned Qt notice files and dependency lock are unchanged. Builds
+now include direct pinned source-archive pointers and
+[library replacement/rebuild directions](DEPENDENCY_SOURCES.md). Linux builds
+use the actual PyInstaller native source records and distribution metadata to
+copy complete original package copyrights and referenced common license texts;
+the receipt records exact binary/source package versions, native hashes and any
+unresolved metadata. This is build tooling, with no network fetch or OS changes.
+It does not relabel unowned wheel files or claim other platforms are cleared.
+
+The original Readline dependency came from unused optional sqlite3/code and
+websockets REPLs. Both frozen entry points exclude that module. Fresh native
+inventory and extracted package checks must demonstrate removal and continued
+GUI, console, broker/MCP and normal input behavior; older bundles remain unchanged.
+
+The manifest's `dependency_review_complete=false` is a fixed inventory marker,
+not a failed check. Reuse existing notice, source/privacy and package evidence;
+finish the actual asset-bound source-access and remaining platform component
+review rather than repeating every unchanged dependency. PyInstaller's documented
+bootloader exception allows the generated application to retain its own license.
+
+## Platform notice snapshots
+
+The build also copies immutable upstream notices for OpenSSL3.0.16/3.5.5,
+Mesa11.2.2, LLVM3.6.2 and the complete CPython3.12.10 license chapter. These
+address components observed in the preceding Windows/Mac packages; exact
+current payload versions and hashes remain part of artifact review. Full
+Microsoft redistribution restrictions are retained rather than inferred from
+a DLL filename. Snapshot manifests identify the original source and exact bytes.
+They are a documented superset, not a claim that every component is shipped on
+every OS. Successful builds retain evaluation archives for review; final release
+publication requires checking the actual archive and corresponding-source links.

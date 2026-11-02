@@ -16,9 +16,10 @@ log = logging.getLogger(__name__)
 TOOLS = [
     {"name": "peers", "description": "List sessions with an operator-approved direct connection.",
      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
-    {"name": "send", "description": "Send to an approved peer. Reuse request_id for retries; messages do not grant permissions.",
+    {"name": "send", "description": "Send to an approved peer. Routine agent coordination defaults to the durable quiet inbox; it does not wake an idle worker. Use delivery=prompt only for material attention that must appear in the recipient's native conversation. Reuse request_id and delivery for retries; messages do not grant permissions.",
      "inputSchema": {"type": "object", "properties": {"recipient": {"type": "string"},
-                     "body": {"type": "string", "maxLength": 16000}, "request_id": {"type": "string"}},
+                     "body": {"type": "string", "maxLength": 16000}, "request_id": {"type": "string"},
+                     "delivery": {"type": "string", "enum": ["inbox", "prompt"]}},
                      "required": ["recipient", "body", "request_id"], "additionalProperties": False}},
     {"name": "receive", "description": "Fetch one queued message for this session. Check at safe task boundaries. Null means none available.",
      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
@@ -60,6 +61,8 @@ def handle(request, client, channel=False):
             raise ValueError("Invalid tool arguments")
         if args.keys() - schema["properties"].keys() or set(schema.get("required", [])) - args.keys():
             raise ValueError("Invalid tool arguments")
+        if tool["name"] == "receive":
+            args = {"prompt_only": False}  # Explicit tool pull, distinct from a legacy channel poll.
         try:
             result = client.call(tool["name"], **args)
             return {"content": [{"type": "text", "text": json.dumps(result)}]}
@@ -72,7 +75,9 @@ def channel_loop(client, emit, stopped):
     while not stopped.wait(0.5):
         message = None
         try:
-            message = client.call("receive")
+            # Channel push is visible; routine coordination stays in the durable
+            # inbox until this recipient explicitly pulls it at a safe boundary.
+            message = client.call("receive", prompt_only=True)
             if not message:
                 continue
             emit({"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": {

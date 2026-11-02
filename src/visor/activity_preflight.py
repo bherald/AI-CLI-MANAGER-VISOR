@@ -8,7 +8,7 @@ from .activity_document import _validate
 from .store import PolicyError
 
 
-def preflight(service, actor, document, expected_revision=None):
+def preflight(service, actor, document, expected_revision=None, publisher_grants=None):
     from .activity_contract import CONTRACT_REVISION
     from .activity_store import _hash, _json, _stamp
     session = service._actor(actor)
@@ -72,11 +72,11 @@ def preflight(service, actor, document, expected_revision=None):
             old = json.loads(db.execute("SELECT document FROM activity_revisions WHERE board_id=? AND revision=?",
                 (candidate["id"], revision)).fetchone()[0]) if existing else None
             previous = {card["id"]: card for card in old["cards"]} if old else {}
-            incoming = {card["id"]: card for card in candidate["cards"]}
-            for identity, card in previous.items():
-                if card["contributor"] != actor and incoming.get(identity) != {key: value for key, value in card.items() if key != "contributor"}:
-                    error("card_ownership", "/cards", "Only a card's contributor may change or remove it")
-                    return result
+            try:
+                service._assert_publish_permissions(db, actor, old, candidate, publisher_grants)
+            except PolicyError as exc:
+                error("card_ownership", "/cards", exc)
+                return result
             for index, card in enumerate(candidate["cards"]):
                 if card["id"] in previous and card["kind"] != previous[card["id"]]["kind"]:
                     error("card_kind_change", f"/cards/{index}/kind", "Use a new card ID when changing kind")

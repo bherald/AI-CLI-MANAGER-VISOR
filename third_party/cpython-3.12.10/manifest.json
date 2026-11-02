@@ -1,0 +1,16 @@
+{
+  "component": "CPython",
+  "version": "3.12.10",
+  "repository": "python/cpython",
+  "tag": "v3.12.10",
+  "commit": "0cc81280367df838c4b199f8f0378837165071c2",
+  "source_archive": "https://github.com/python/cpython/archive/0cc81280367df838c4b199f8f0378837165071c2.tar.gz",
+  "scope": "Unmodified CPython documentation license chapter, including its third-party notices. Supplements the interpreter LICENSE copied by the build; conditional on actual interpreter/component versions and not an assertion that every documented optional component is bundled.",
+  "files": [
+    {
+      "path": "Doc/license.rst",
+      "sha256": "341832873fd316a37927e79385093fbbfd40a467428480835fe435a80cadf4e5",
+      "source": "https://raw.githubusercontent.com/python/cpython/0cc81280367df838c4b199f8f0378837165071c2/Doc/license.rst"
+    }
+  ]
+}

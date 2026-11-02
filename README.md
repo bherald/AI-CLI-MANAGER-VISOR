@@ -1,12 +1,13 @@
 # VISOR — AI CLI session supervisor
 
-**Local communication candidate:** beta 6 adds independent-recipient delivery,
-durable native Send and exact reply inspection. It is not published; see
-[changes, configuration and upgrade scope](docs/RELEASE_1_5_0_BETA_6.md).
+**1.5.0 beta 6 source:** quiet agent inboxes, scoped automatic card
+publishing, guarded session recovery, durable Send and saved browser-token
+settings. Source and local Linux acceptance are available. Downloaded packages
+identify their exact source revision and checksums on the release page. See [changes and upgrade scope](docs/RELEASE_1_5_0_BETA_6.md).
 
 VISOR is a compact desktop supervisor for Codex and Claude Code. Agent sessions run in separate terminal windows with their own movement, sizing and application switching. Use the supervisor to find and resume exact sessions, bring terminals forward, connect selected agents, and follow their coordination messages through delivery, acknowledgment and completion. Session communication and its local message history are a core part of VISOR, alongside terminal management and graceful wrap-up.
 
-**1.5.0 beta 5 — one Prism workspace, rich controls and optional VISOR + Prism web access.** The candidate adds one desktop home for all boards, readable session names, collapsed card actions, multi-row selection, a portable gadget catalog and an optional combined sessions/messages/Prism view for phone, tablet and browser. The additive table/agent work keeps version 1.5.0. See [what changed and validation](docs/RELEASE_1_5_0.md) and the [Prism design](docs/PRISM_DESIGN.md). The latest published release is [1.5.0 beta 5](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5). Exact-tag source/build/extracted-package CI passed on Windows, Linux and both Mac architectures. Interactive Windows/Mac, physical-device and complete accessibility acceptance remain pending.
+**1.5.0 beta 5 introduced one Prism workspace, rich controls and optional VISOR + Prism web access.** That release added one desktop home for all boards, readable session names, collapsed card actions, multi-row selection, a portable gadget catalog and an optional combined sessions/messages/Prism view for phone, tablet and browser. The additive table/agent work keeps version 1.5.0. See [what changed and validation](docs/RELEASE_1_5_0.md) and the [Prism design](docs/PRISM_DESIGN.md). The preceding release is [1.5.0 beta 5](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5). Exact-tag source/build/extracted-package CI passed on Windows, Linux and both Mac architectures. Interactive Windows/Mac, physical-device and complete accessibility acceptance remain pending.
 
 Published packages are listed under [GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases). Exit an older supervisor before launching a new download; extract and keep the complete package directory together. The title and **About / diagnostics** identify the running version and executable.
 
@@ -82,7 +83,7 @@ Run `python3.12 scripts/native_build.py` on Linux/macOS or `py -3.12 scripts/nat
 
 Windows packages contain `visor/visor.exe`; Linux packages contain `visor/visor`. Extract and keep the complete directory together. `visor-console` is the companion diagnostic/helper executable. macOS packaging produces `visor.app` with an embedded helper, using an ad-hoc signature; Developer ID signing and notarization are pending. Build output and checksums live under `dist/`, with `dist/latest-build.json` identifying the current local build.
 
-The GitHub workflow covers Windows, Linux, Apple silicon and Intel Mac jobs. The [Mac follow-up run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39462649997) passed both Mac architectures, including signing and extracted-package/upgrade checks. Interactive desktop results remain unverified. Manual and version-tag workflow runs retain evaluation artifacts; release downloads identify the exact published version and architectures.
+The GitHub workflow covers Windows, Linux, Apple silicon and Intel Mac jobs. The [Mac follow-up run](https://github.com/bherald/AI-CLI-MANAGER-VISOR/actions/runs/39462649997) passed both Mac architectures, including signing and extracted-package/upgrade checks. Interactive desktop results remain unverified. Successful main-branch pushes, manual runs and version-tag builds retain verified evaluation archives and checksums for seven days. Tagged GitHub releases provide persistent public downloads after exact artifact review.
 
 Default state directories are `%LOCALAPPDATA%/Visor`, `~/Library/Application Support/Visor`, and `${XDG_DATA_HOME:-~/.local/share}/visor`. `--data-dir` isolates VISOR state, **not provider discovery or provider history**. Use disposable provider sessions when testing deletion. Data and messages remain local and unencrypted at rest; see [security](SECURITY.md).
 
@@ -157,6 +158,21 @@ prevent accidental replay. Cleanup affects VISOR history, not provider transcrip
 
 Operator messages remain available independently of the agent communication toggle. Agent messages require an explicit direct pair, participation by both sessions, and the master agent communication toggle. One session can have several pairs; connections are not transitive. Credentials identify the sender and cannot call operator controls.
 
+New agent `send` requests default to a quiet durable inbox. They remain inspectable
+in VISOR history and reach the recipient through its scoped `receive` tool, followed
+by explicit read/completion acknowledgment. They do not create Codex user prompts
+or visible Claude channel notifications. An agent can explicitly request
+`delivery: "prompt"` for material attention; human operator messages and wrap-up
+requests keep their visible delivery. A quiet inbox does **not** wake an idle worker.
+Read acknowledgment proves reading, not task execution or completion.
+
+Existing messages retain their original delivery kind, state and request identity.
+An identical retry without a delivery option preserves a legacy request's original
+transport; explicitly changing that option for an existing request is rejected.
+Check the scoped broker `ping` capability `quiet_agent_inbox` before relying on
+quiet delivery. An older broker or missing session credential is a hold; do not
+substitute operator credentials or silently send a visible fallback.
+
 Disabling agent communication holds queued agent messages. Re-enabling does not automatically release held messages. Uncertain attempts are not blindly retried.
 
 Agent traffic is also held after three identical messages in the same direction within five minutes,
@@ -176,7 +192,7 @@ and verifies the control-socket handshake. Startup failures are shown before ope
 Discovery stays read-only; VISOR never restarts a running Codex daemon. A loaded session with
 no active turn is shown as idle, independently of whether VISOR owns its terminal.
 
-Messages are sent using Codex's queue interface. MCP acknowledgments work when the tools are attached. Already-loaded threads can lack the requested MCP configuration, so messages also provide an explicit reply receipt. The broker accepts only the exact receipt following its exact message envelope in the same recipient turn, with a final completed turn required for completion. It does not infer completion from ordinary prose. Receipt reconciliation runs separately from metadata refresh, checking up to four recipients per cycle in rotation. Each check reads recent turns and at most one older page, preserving its backfill cursor across broker restarts. It queries unresolved messages independently of the 200-message UI window. Repeated/expired cursors report errors; valid recent receipts survive a backfill error. Exhausted history is revisited after five minutes while recent turns keep being checked.
+Visible messages are sent using Codex's queue interface. MCP acknowledgments work when the tools are attached. Already-loaded threads can lack the requested MCP configuration, so messages also provide an explicit reply receipt. The broker accepts only the exact receipt following its exact message envelope in the same recipient turn, with a final completed turn required for completion. It does not infer completion from ordinary prose. Receipt reconciliation runs separately from metadata refresh, checking up to four recipients per cycle in rotation. Each check reads recent turns and at most one older page, preserving its backfill cursor across broker restarts. It queries unresolved messages independently of the 200-message UI window. Repeated/expired cursors report errors; valid recent receipts survive a backfill error. Exhausted history is revisited after five minutes while recent turns keep being checked.
 
 Full peer tools on already-loaded Codex threads still need attachment work. **Check peer tools** in a session menu inspects that thread's advertised inventory; it does not modify global configuration or prove end-to-end tool calls. Operator message/completion fallback is implemented and has passed live source and packaged tests. See the [Windows audit](docs/WINDOWS_ACCEPTANCE.md).
 

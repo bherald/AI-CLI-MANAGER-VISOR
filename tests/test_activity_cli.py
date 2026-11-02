@@ -72,6 +72,18 @@ class ActivityCLICase(unittest.TestCase):
             run_activity(["list"], self.root)
         self.client_type.assert_not_called()
 
+    def test_publisher_commands_use_normal_scoped_client_and_exact_revisions(self):
+        common = ["--id", "board", "--contributor", "codex:owner", "--publisher", "codex:fixture"]
+        self.invoke("publisher-get", *common)
+        self.client.call.assert_called_with("activity_publisher_get", id="board", contributor="codex:owner", publisher="codex:fixture")
+        revision = ["--expected-revision", "4", "--expected-grant-revision", "0", "--request-id", "grant"]
+        self.invoke("publisher-grant", *common, *revision, "--card-ids", "note", "status")
+        self.client.call.assert_called_with("activity_publisher_grant", id="board", contributor="codex:owner", publisher="codex:fixture",
+                                            expected_revision=4, expected_grant_revision=0, request_id="grant", card_ids=["note", "status"])
+        self.invoke("publisher-revoke", *common, "--expected-revision", "4", "--expected-grant-revision", "1", "--request-id", "revoke")
+        self.client.call.assert_called_with("activity_publisher_revoke", id="board", contributor="codex:owner", publisher="codex:fixture",
+                                            expected_revision=4, expected_grant_revision=1, request_id="revoke")
+
     def test_codex_and_claude_session_access_uses_exact_hash_and_binding(self):
         access = self.root / "activity-access"
         access.mkdir()
@@ -165,7 +177,8 @@ class ActivityCLICase(unittest.TestCase):
     def test_mcp_schema_has_no_actor_or_operator_access(self):
         names = {tool["name"] for tool in ACTIVITY_TOOLS}
         self.assertEqual(names, {"activity_catalog", "activity_validate", "activity_template", "activity_events", "activity_update_card", "activity_list", "activity_get", "activity_publish", "activity_control",
-                                 "activity_asset", "activity_replies", "activity_acknowledge", "activity_share"})
+                                 "activity_asset", "activity_replies", "activity_acknowledge", "activity_share",
+                                 "activity_publisher_get", "activity_publisher_grant", "activity_publisher_revoke"})
         for tool in ACTIVITY_TOOLS:
             self.assertFalse(tool["inputSchema"]["additionalProperties"])
             self.assertFalse({"actor", "owner", "token", "credential"} & tool["inputSchema"]["properties"].keys())

@@ -1,0 +1,21 @@
+{
+  "component": "Mesa",
+  "version": "11.2.2",
+  "source_archive": "https://archive.mesa3d.org/older-versions/11.x/11.2.2/mesa-11.2.2.tar.xz",
+  "source_archive_sha256": "40e148812388ec7c6d7b6657d5a16e2e8dabba8b97ddfceea5197947647bdfb4",
+  "scope": "Unmodified release-wide Mesa license/component overview and supplied COPYING text, a superset that does not assert all components or LGPL-covered code are used. Preserve the separate LLVM notice for llvmpipe; source-file notices remain in the exact source archive.",
+  "files": [
+    {
+      "path": "docs/license.html",
+      "sha256": "288ddfae338be168ef2492c21de42ee2f5c8ebc5a734b4e58b37007141bc2d6d",
+      "source": "https://archive.mesa3d.org/older-versions/11.x/11.2.2/mesa-11.2.2.tar.xz",
+      "archive_member": "mesa-11.2.2/docs/license.html"
+    },
+    {
+      "path": "docs/COPYING",
+      "sha256": "e8800bd573e8f844a5b87cf43cc4d55767314b4e95a6092cf26ce9c6ed00b877",
+      "source": "https://archive.mesa3d.org/older-versions/11.x/11.2.2/mesa-11.2.2.tar.xz",
+      "archive_member": "mesa-11.2.2/docs/COPYING"
+    }
+  ]
+}

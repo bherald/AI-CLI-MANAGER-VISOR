@@ -13,6 +13,7 @@ a = Analysis(
     pathex=[str(root / "src")],
     datas=[(str(root / "src/visor/web"), "visor/web")],
     hiddenimports=["visor.ui", "PySide6.QtWidgets", "PySide6.QtCore", "PySide6.QtGui"],
+    excludes=["readline"],
 )
 pyz = PYZ(a.pure)
 exe = EXE(

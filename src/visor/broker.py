@@ -45,7 +45,7 @@ from .providers import (
 from .store import PolicyError, Store, canonical_uuid, operator_reply_input
 
 log = logging.getLogger(__name__)
-BUILD = "2026-11-02-windows-token-identity-r11"
+BUILD = "2026-11-02-quiet-publisher-r12"
 
 WRAP_UP = ("Finish your current safe step, save context, report validation and remaining work, "
            "and stop taking new work. Do not terminate unrelated processes. Report any owned "
@@ -55,10 +55,12 @@ WRAP_UP = ("Finish your current safe step, save context, report validation and r
 
 ACTIVITY_AGENT_ACTIONS = frozenset({"activity_list", "activity_get", "activity_publish", "activity_control",
                                     "activity_share", "activity_asset", "activity_replies", "activity_events", "activity_acknowledge", "activity_limits",
-                                    "activity_catalog", "activity_template", "activity_update_card", "activity_validate"})
+                                    "activity_catalog", "activity_template", "activity_update_card", "activity_validate",
+                                    "activity_publisher_get", "activity_publisher_grant", "activity_publisher_revoke"})
 ACTIVITY_OPERATOR_ACTIONS = frozenset({"activity_list", "activity_get", "activity_control", "activity_share",
                                        "activity_reply", "activity_replies", "activity_event", "activity_events", "activity_edit", "activity_delete", "activity_view", "activity_bind", "activity_revoke", "activity_limits",
-                                       "activity_catalog", "activity_template"})
+                                       "activity_catalog", "activity_template", "activity_publisher_get",
+                                       "activity_publisher_grant", "activity_publisher_revoke"})
 
 
 def activity_request_limit(policy):
@@ -180,7 +182,7 @@ class Broker:
             return True
         if action == "ping":
             return {"running": True, "version": "1.5.0", "build": BUILD,
-                    "capabilities": ["message_get", "operator_reply"],
+                    "capabilities": ["message_get", "operator_reply", "quiet_agent_inbox"],
                     "limits": {"message_max_chars": 16000, "max_rpc_bytes": 65536}}
         if action == "terminal_appearance":
             from .appearance import validate
@@ -421,7 +423,7 @@ class Broker:
             return result
         if action == "activity_validate":
             from .activity_preflight import preflight
-            if set(params) - {"document", "expected_revision"} or "document" not in params:
+            if set(params) - {"document", "expected_revision", "publisher_grants"} or "document" not in params:
                 raise PolicyError("Preflight requires document and optional expected_revision")
             return preflight(self.activities, actor, **params)
         if action == "activity_template":
@@ -433,10 +435,14 @@ class Broker:
             return self.activities.list(actor)
         if action == "activity_get":
             return self.activities.get(actor, params["id"])
+        if action == "activity_publisher_get":
+            return self.activities.publisher_get(actor, **params)
+        if action in ("activity_publisher_grant", "activity_publisher_revoke"):
+            return self.activities.publisher_set(actor, **params, revoke=action == "activity_publisher_revoke")
         if action == "activity_publish":
-            return self.activities.publish(actor, params["document"], params["request_id"], params.get("expected_revision", 0))
+            return self.activities.publish(actor, params["document"], params["request_id"], params.get("expected_revision", 0), params.get("publisher_grants"))
         if action == "activity_update_card":
-            return self.activities.update_card(actor, params["id"], params["card_id"], params["changes"], params["expected_revision"], params["request_id"])
+            return self.activities.update_card(actor, params["id"], params["card_id"], params["changes"], params["expected_revision"], params["request_id"], params.get("publisher_grants"))
         if action == "activity_control":
             result = self.activities.control(actor, params["id"], params["action"], params["request_id"])
             if params["action"] in ("open", "focus") and result["view_action"] in ("open", "focus"):
@@ -520,6 +526,10 @@ class Broker:
             return {"session": identity, "credential_file": str(path), "enabled": True}
 
     def agent_action(self, action, params, identity):
+        if action == "ping":
+            return {"running": True, "version": "1.5.0", "build": BUILD,
+                    "capabilities": ["quiet_agent_inbox"], "default_agent_delivery": "inbox", "idle_wake": False,
+                    "quiet_receive": {"prompt_only": False}}
         if action == "channel_written":
             message = self.store.message(params["message"])
             if not message or message["recipient"] != identity:
@@ -534,13 +544,22 @@ class Broker:
                     for s in self.store.sessions() if s["id"] in keys]
         if action == "send":
             # Sender and origin come from the credential, never request arguments.
-            return self.store.enqueue(identity, params["recipient"], params["body"], params["request_id"])
+            delivery = params.get("delivery")
+            if "delivery" in params and delivery not in ("inbox", "prompt"):
+                raise PolicyError("Agent delivery must be inbox or prompt")
+            kind = {None: None, "inbox": "coordination", "prompt": "message"}[delivery]
+            return self.store.enqueue(identity, params["recipient"], params["body"], params["request_id"], kind=kind)
         if action == "receive":
+            # Legacy channel workers poll without this flag. Never let an old
+            # visible push consumer claim newly introduced quiet messages.
+            prompt_only = params.get("prompt_only", True)
+            if type(prompt_only) is not bool:
+                raise PolicyError("Receive prompt_only must be a boolean")
             with self.delivery_lock:
                 if (identity in self.deleting_targets
                         or identity in self.delivery_targets and self.delivery_targets[identity].locked()):
                     return None
-                message = self.store.claim(identity)
+                message = self.store.claim(identity, prompt_only=prompt_only)
             return message
         if action == "transport_received":
             self.store.transport_received(identity, params["message"])
@@ -814,7 +833,7 @@ class Broker:
                     return  # Deleted after scheduling, before admission.
                 if session["provider"] != "codex" or session["status"] not in ("working", "waiting", "idle"):
                     return
-                message = self.store.claim(key)
+                message = self.store.claim(key, prompt_only=True)
             if message:
                 try:
                     state, detail = deliver_codex(session, message)
@@ -846,7 +865,7 @@ class Broker:
                     if completed:
                         self.delivery_error = "Delivery result unavailable: " + ", ".join(errors) if errors else ""
                     sessions = {session["id"]: session for session in self.store.sessions()}
-                    for key in self.store.queued_recipients():
+                    for key in self.store.queued_recipients(prompt_only=True):
                         if len(self.delivery_inflight) >= self.delivery_parallelism:
                             break
                         session = sessions.get(key)

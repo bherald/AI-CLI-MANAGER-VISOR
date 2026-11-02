@@ -1,51 +1,63 @@
-# VISOR 1.5.0 beta 6 communication candidate
+# VISOR 1.5.0 beta 6
 
-Build: `2026-11-01-details-r7`. Proposed tag: `v1.5.0-beta.6`.
-This is a local preparation, not a published release.
+Build: `2026-11-02-quiet-publisher-r12`. Release tag: `v1.5.0-beta.6`.
+Release downloads, their exact source revision and checksums are listed on
+[GitHub releases](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases).
+A source checkout or successful CI build alone is not a published download.
 
 ## Changes
 
-- Deliver messages to independent Codex recipients concurrently through the
-  existing durable queue. A slow recipient or its deletion no longer holds the
-  shared admission lock. Preserve per-recipient ordering, policy and UNKNOWN
-  outcomes. [Configuration and recovery](COMMUNICATION-DELIVERY.md).
-- Persist native Send's exact request before dispatch and retain it across a
-  lost response or restart. Retry reconciles the same request instead of creating
-  another message. Full Unicode stays within the existing typed text limits.
-- Show the exact recipient-bound final reply in the native receipt inspector;
-  allow a deliberate follow-up without replacing an existing pending draft.
-- Make held, failed and uncertain messages visible under Needs attention.
-  [Native message guide](NATIVE_MESSAGES.md).
-- Retain safe HTTP(S) links and bounded table formatting in Prism text cards.
-  Native links now open through explicit mouse or keyboard activation; native and
-  browser rendering preserve the same validated colors, borders and spacing.
-  [HTML formatting and safety](PRISM_HTML.md).
+- Routine agent messages stay in auditable quiet inboxes. Agents explicitly pull
+  and acknowledge them; operator messages and explicit attention requests keep
+  their normal visible delivery. A quiet message does not secretly wake an idle
+  Codex worker. See [communication delivery](COMMUNICATION-DELIVERY.md).
+- Delegate publication of exact Prism cards to an existing permitted session
+  without changing their contributors or operator-command recipients. Grants
+  are revision checked and revocable. No card removal/recreation is needed.
+  See [scoped publishing](DELEGATED_PUBLISHING.md).
+- Resume selected saved sessions with fresh per-provider checks and honest
+  per-session launch/skipped/error results. Existing workers and uncertain
+  ownership remain protected. See [session recovery](SESSION_RECOVERY.md).
+- Save generated or operator-selected static browser tokens, retain the selected
+  mode across reopening, and revoke old access when rotating a saved token.
+  Correct Windows path/descriptor file identity checks without relaxing private
+  permissions, replacement checks or mutation detection. See [web access](WEB_ACCESS.md).
+- Preserve durable native Send, independent-recipient delivery, exact replies,
+  typed text limits and UNKNOWN outcomes. See [native messages](NATIVE_MESSAGES.md).
+- Retain validated Prism links, readable tables, borders and details. Provider
+  approval boundaries and explicit direct-session connections still apply.
 
-## Evidence and limits
+## Verification and release status
 
-Focused source tests reproduce the original failures before correction and pass
-afterward. Independent tests include a slow target being deleted while healthy
-delivery and policy changes proceed, with no native model/provider calls. Final
-combined source, smoke, extracted-package and privacy results are retained with
-the exact candidate commit by the release preparation workflow.
+The source is built and checked separately on Windows, Linux and both Mac
+architectures. Consult the exact release revision and its hosted package checks;
+a preceding source run does not qualify a different candidate.
+Focused quiet-inbox and scoped-publishing checks passed together. A local Linux
+package upgrade preserved saved boards, credentials, approved pairs and the same
+live terminal helpers; an authenticated loopback listener was restored normally.
+No provider/model process was signalled. These results do not claim interactive
+Windows/Mac, physical-device or accessibility acceptance.
 
-The last published release remains
-[beta 5](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5).
-Its hosted checks do not verify this candidate. Windows and macOS native builds,
-interactive platform acceptance and binary redistribution review remain separate
-from local Linux checks and the MIT first-party source candidate. Preserve the
-existing dependency notices and [distribution review](DEPENDENCY_REVIEW.md).
+Builds omit an unused optional Readline module. They retain the complete pinned
+Qt and ICU notices, exact source-access/replacement directions and available
+native copyright metadata. Actual binary inventories and remaining platform
+notices must be checked before final release. See [dependency review](DEPENDENCY_REVIEW.md)
+and [source access](DEPENDENCY_SOURCES.md).
 
-## Upgrade, rollback and publication
+Successful main pushes, manual builds and version-tag builds retain evaluation
+archives/checksums for seven days. Persistent release downloads are a separate
+verified publication step. The earlier
+[beta 5](https://github.com/bherald/AI-CLI-MANAGER-VISOR/releases/tag/v1.5.0-beta.5) remains available;
+use the release listing for current downloads.
 
-Use a matched supervisor and broker after private-state backup and normal
-in-flight request reconciliation. Preserve unresolved draft and message custody;
-do not force a resend or kill shared provider processes. Retain the previous
-matched package. Rollback must first reconcile or preserve the new pending draft,
-since an older composer cannot interpret that field safely.
+## Upgrade and rollback
 
-The public source candidate excludes private history, runtime profiles, tokens,
-operator records and private planning files. New screenshots use synthetic data.
-Freeze the exact commit, export, extract and inspect the manifest before proposing
-the exact repository, branch, commit set and release content for approval. No
-push, tag, public release or hosted-CI result is implied by local preparation.
+Back up private state, reconcile in-flight requests and close the supervisor with
+**Leave running and close**. Upgrade the matched supervisor/broker while retaining
+older helpers and a rollback package. Saved profiles, tokens and provider history
+are not part of the public source or release archives.
+
+Before downgrading, revoke a scoped publisher and stop its caller. Hold pending
+agent traffic and preserve quiet, held and UNKNOWN messages; an older broker must
+not reinterpret them as visible prompts. Do not force a resend, restore old state
+as a normal upgrade shortcut or terminate unrelated terminals.

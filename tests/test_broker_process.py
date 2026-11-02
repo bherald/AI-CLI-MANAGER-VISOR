@@ -205,14 +205,17 @@ class BrokerProcessCase(unittest.TestCase):
             for session in (key, peer):
                 self.client.call("participate", session=session, enabled=True)
             self.client.call("toggle", enabled=True)
-            message = peer_client.call("send", recipient=key, body="Peer message", request_id="cross-provider")
+            # This case verifies explicit channel attention; routine agent
+            # coordination remains in its quiet inbox until the peer pulls it.
+            message = peer_client.call("send", recipient=key, body="Peer message",
+                                       request_id="cross-provider", delivery="prompt")
             event = output.get(timeout=5)
             self.assertEqual(event["params"]["meta"]["message_id"], message["id"])
             send({"id": 2, "method": "tools/call", "params": {"name": "acknowledge", "arguments": {"message": message["id"], "completed": True}}})
             self.assertFalse(output.get(timeout=5)["result"].get("isError", False))
             send({"id": 3, "method": "tools/call", "params": {"name": "send", "arguments": {"recipient": peer, "body": "Reply", "request_id": "reply"}}})
             self.assertFalse(output.get(timeout=5)["result"].get("isError", False))
-            self.assertEqual(peer_client.call("receive")["body"], "Reply")
+            self.assertEqual(peer_client.call("receive", prompt_only=False)["body"], "Reply")
             self.client.call("toggle", enabled=False)
             held = peer_client.call("send", recipient=key, body="Held", request_id="held")
             self.assertEqual(held["state"], "held")

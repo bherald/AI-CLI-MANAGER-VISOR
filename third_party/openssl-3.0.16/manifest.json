@@ -1,0 +1,16 @@
+{
+  "component": "OpenSSL",
+  "version": "3.0.16",
+  "repository": "openssl/openssl",
+  "tag": "openssl-3.0.16",
+  "commit": "fa1e5dfb142bb1c26c3c38a10aafa7a095df52e5",
+  "source_archive": "https://github.com/openssl/openssl/archive/fa1e5dfb142bb1c26c3c38a10aafa7a095df52e5.tar.gz",
+  "scope": "Unmodified upstream license snapshot for this OpenSSL version where present; a superset notice is not evidence that a build contains this version.",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
+      "source": "https://raw.githubusercontent.com/openssl/openssl/fa1e5dfb142bb1c26c3c38a10aafa7a095df52e5/LICENSE.txt"
+    }
+  ]
+}

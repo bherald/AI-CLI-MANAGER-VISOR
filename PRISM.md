@@ -186,3 +186,5 @@ private share URL as access to VISOR sessions/messages and Prism; protect remote
 trusted network and HTTPS. No broker token is sent to the browser. Narrow screens
 use readable stacked cards; larger screens can use the freeform canvas.
 See [design, controls and platform references](docs/PRISM_DESIGN.md).
+
+Publication-only delegation lets an existing permitted runner update exact cards while their original contributor receives operator input. See [scoped publishing](docs/DELEGATED_PUBLISHING.md) for normal authenticated grant/get/revoke and revision controls.
