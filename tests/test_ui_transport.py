@@ -4,16 +4,17 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from threading import get_ident
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, Qt, QThread
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+from PySide6.QtWidgets import QApplication, QHeaderView, QMessageBox, QPushButton
 
 from visor.providers import CodexRPC
-from visor.ui import STYLE, Window
+from visor.ui import STYLE, Window, table
 
 
 class TransportCase(unittest.TestCase):
@@ -298,14 +299,46 @@ class UICase(unittest.TestCase):
 
     def test_worker_callback_runs_on_ui_thread(self):
         results = []
-        self.window.job(lambda: 42, lambda result, error: results.append((result, error, QThread.currentThread())))
+        ui_thread = get_ident()
+        self.window.job(lambda: 42, lambda result, error: results.append((result, error, get_ident())))
         for _ in range(100):
             if results:
                 break
             QTest.qWait(10)
         self.assertTrue(results)
         self.assertEqual(results[0][:2], (42, None))
-        self.assertEqual(results[0][2], self.app.thread())
+        self.assertEqual(results[0][2], ui_thread)
+
+    def test_worker_identity_snapshots_survive_pool_retirement_and_new_headers(self):
+        ui_thread, snapshots = get_ident(), []
+        for _ in range(6):
+            window = Window(Path.cwd() / ".cache" / "ui-tests")
+            window.timer.stop()
+            records = []
+            try:
+                window.job(get_ident, lambda worker, error, records=records: records.append((worker, error, get_ident())))
+                self.assertTrue(window.pool.waitForDone(2000))
+                QTest.qWait(10)
+                self.assertEqual(len(records), 1)
+                worker, error, callback = records[0]
+                self.assertIsNone(error)
+                self.assertNotEqual(worker, ui_thread)
+                self.assertEqual(callback, ui_thread)
+                snapshots.append((worker, callback))
+            finally:
+                window.draft_timer.stop()
+                window.allow_close = True
+                window.close()
+                self.assertTrue(window.pool.waitForDone(2000))
+                window.deleteLater()
+                QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            gc.collect()
+            replacement = table(["Session", "State"])
+            self.assertIsInstance(replacement.horizontalHeader(), QHeaderView)
+            self.assertIsInstance(replacement.verticalHeader(), QHeaderView)
+            replacement.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.assertEqual(len(snapshots), 6)
 
     def test_close_discards_queued_worker_result_and_stops_timers(self):
         results = []
@@ -349,23 +382,25 @@ class UICase(unittest.TestCase):
 
     def test_focus_verifies_in_worker_and_activates_on_ui_thread(self):
         calls, activations = [], []
+        ui_thread = get_ident()
         target = {"token": "terminal", "identity": {"hwnd": 123}}
 
         class Client:
             def call(self, action, **params):
-                calls.append((action, params, QThread.currentThread()))
+                # Record identity, not a borrowed QObject owned by this short-lived pool.
+                calls.append((action, params, get_ident()))
                 return target
 
         self.window.client = Client()
-        with patch.object(self.window, "poll"), patch("visor.ui.focus_verified", side_effect=lambda value: activations.append((value, QThread.currentThread()))):
+        with patch.object(self.window, "poll"), patch("visor.ui.focus_verified", side_effect=lambda value: activations.append((value, get_ident()))):
             self.window.focus_or_resume("codex:a", True)
             for _ in range(100):
                 QTest.qWait(10)
                 if activations:
                     break
         self.assertEqual(calls[0][:2], ("focus_target", {"session": "codex:a"}))
-        self.assertNotEqual(calls[0][2], self.app.thread())
-        self.assertEqual(activations, [(target, self.app.thread())])
+        self.assertNotEqual(calls[0][2], ui_thread)
+        self.assertEqual(activations, [(target, ui_thread)])
 
     def test_external_focus_link_requires_confirmation_and_defaults_to_cancel(self):
         item = {"title": "External terminal", "identity": {"pid": 42, "created": 1, "handle": "x"}}

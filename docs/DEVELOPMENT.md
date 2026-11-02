@@ -213,3 +213,21 @@ frozen combined assets, scoped APIs, fixed send/receipt routes and exact retries
 It is included in extracted native-package acceptance and makes no model calls.
 
 The current authoring contract revision is exposed through `activity_catalog`; `activity_validate` uses the runtime validator plus read-only revision/ownership/asset checks. Tests exercise actual scoped MCP stdio and CLI processes. See [agent contract](PRISM_AGENTS.md), [web operations](WEB_ACCESS.md) and `tests/test_activity_authoring.py`.
+
+## macOS UI affinity fixture lifetime
+
+The November2 Mac runs exposed a wrong-type header wrapper while constructing a
+later test window. The affinity fixtures had retained borrowed
+`QThread.currentThread()` objects from short-lived worker pools. A local lifetime
+probe retained such a non-Python-owned wrapper after its pool was destroyed; it
+did not reproduce the Mac header failure. Affinity observations now retain plain
+Python thread IDs, preserving the worker-versus-GUI and callback-on-GUI assertions
+without carrying Qt worker wrappers into later windows. Production UI/header and
+worker behavior, dependency versions and the r11 build marker are unchanged.
+
+A focused regression retires six real window-owned pools, processes deletion and
+constructs fresh native headers after each. The existing UI/transport and grid
+selection group passed46 of47 checks (one existing Windows-only skip) in6.180s,
+and Ruff passed. Actual Mac successor CI/package acceptance remains required;
+this Linux result is not reported as a reproduced or cleared native Mac failure.
+No exception catch, retry, test skip or Qt version change was added.
